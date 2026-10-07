@@ -10,6 +10,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "start": "npm run dev",
+    "serve": "node server/static-server.mjs",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:reload": "pm2 startOrReload ecosystem.config.cjs --update-env",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check": "svelte-check --tsconfig ./jsconfig.json",

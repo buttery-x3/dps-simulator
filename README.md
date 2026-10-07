@@ -1,5 +1,8 @@
 # VEILWEAVER
 
+Play at <https://buttery.wtf/dps-simulator/>. See [deployment setup](docs/deployment.md)
+for the Hetzner Caddy and PM2 configuration.
+
 A Svelte browser arena for practicing ranged damage while dodging. Choose a rotation, keep damage-over-time effects rolling, commit to casts and channels, and move out of floor telegraphs. A Veilweaver expands their mind to understand reality, then weaves the veil’s astral threads into the world to reshape it and deal damage.
 
 ## Quick start
