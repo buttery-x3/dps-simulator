@@ -8,6 +8,7 @@ import {spellReadiness, ICONS, drawSpellIcon} from '../src/lib/icons.js';
 import {buildHud, maintenanceDots} from '../src/lib/hud.js';
 import {ArenaRenderer} from '../src/lib/renderer.js';
 import {registerTrainingTools} from '../src/lib/browser-tools.js';
+import {DEFAULT_BINDINGS, keyLabel} from '../src/lib/keybindings.js';
 
 const loadout = (abilities, talents = {}) => ({abilities, talents});
 const fresh = (selection, options = {}) => {
@@ -16,20 +17,24 @@ const fresh = (selection, options = {}) => {
 };
 const hash = canvas => createHash('sha256').update(canvas.toBuffer('image/png')).digest('hex');
 function recordingContext(width = 1000, height = 560) {
-  const canvas = createCanvas(width, height), actual = canvas.getContext('2d'), words = [], arcs = [];
+  const canvas = createCanvas(width, height), actual = canvas.getContext('2d'), words = [], arcs = [], labels = [];
   const context = new Proxy(actual, {
     get(target, property) {
       const value = Reflect.get(target, property, target);
       if (typeof value !== 'function') return value;
       return (...args) => {
-        if (property === 'fillText') words.push(String(args[0]));
+        if (property === 'fillText') {
+          words.push(String(args[0]));
+          labels.push({text: String(args[0]), x: args[1], y: args[2], font: target.font,
+            metrics: target.measureText(String(args[0])), transform: target.getTransform(), strokeWidth: target.lineWidth});
+        }
         if (property === 'arc') arcs.push(args);
         return value.apply(target, args);
       };
     },
     set(target, property, value) { return Reflect.set(target, property, value, target); },
   });
-  return {canvas, context, words, arcs};
+  return {canvas, context, words, arcs, labels};
 }
 
 test('all eight canonical abilities have distinct real Canvas sigils', () => {
@@ -63,6 +68,133 @@ test('key labels follow loadout order and an explicit state key override', () =>
   assert.deepEqual(words, []);
 });
 
+test('runtime bindings default to number codes, validate atomically, and never alias caller arrays', () => {
+  const sim = new RaidSim();
+  assert.deepEqual(sim.keybindings, ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']);
+  assert.deepEqual(sim.spells.map(spell => spell.key), SLOT_KEYS);
+  assert.deepEqual(sim.spells.map(spell => spell.keyCode), DEFAULT_BINDINGS);
+  const codes = ['KeyQ', 'KeyE', 'KeyR', 'Digit4', 'Digit5'];
+  sim.configureKeybindings(codes);
+  const expected = [...codes];
+  codes[0] = 'KeyZ';
+  assert.deepEqual(sim.keybindings, expected);
+  assert.deepEqual(sim.spells.map(spell => spell.key), ['Q', 'E', 'R', '4', '5']);
+  const retainedSpells = sim.spells, retainedMap = sim.spellMap, before = sim.snapshot();
+  for (const invalid of [null, [], ['KeyQ'], ['KeyQ', 'KeyQ', 'KeyR', 'Digit4', 'Digit5'], ['KeyW', 'KeyE', 'KeyR', 'Digit4', 'Digit5']]) {
+    assert.throws(() => sim.configureKeybindings(invalid));
+    assert.deepEqual(sim.snapshot(), before);
+    assert.equal(sim.spells, retainedSpells);
+    assert.equal(sim.spellMap, retainedMap);
+    assert.throws(() => new RaidSim({keybindings: invalid}));
+  }
+  const custom = new RaidSim({keybindings: expected});
+  expected[0] = 'KeyZ';
+  assert.equal(custom.spells[0].keyCode, 'KeyQ');
+  const snapshot = custom.snapshot();
+  snapshot.keybindings[0] = 'KeyX';
+  snapshot.keyLabels[0] = 'X';
+  snapshot.availableSpells[0].key = 'X';
+  assert.equal(custom.keybindings[0], 'KeyQ');
+  assert.equal(custom.metrics().keyLabels[0], 'Q');
+  assert.equal(custom.spells[0].key, 'Q');
+});
+
+test('paused rebinding changes only slot labels, preserving a cast and combat state through resume', () => {
+  const sim = fresh();
+  sim.use('veil-bolt'); sim.advance(.4);
+  const beforeRunning = sim.snapshot();
+  const codes = ['KeyQ', 'KeyE', 'KeyR', 'Digit4', 'Digit5'];
+  assert.throws(() => sim.configureKeybindings(codes), /Pause/);
+  assert.deepEqual(sim.snapshot(), beforeRunning);
+  sim.pause();
+  const spells = sim.spells, spellMap = sim.spellMap, cast = sim.cast;
+  const definitions = sim.spells.map(({key, keyCode, ...spell}) => structuredClone(spell));
+  const state = JSON.stringify({tick: sim.tick, time: sim.time, gcd: sim.gcdUntil, rng: sim.rngState,
+    cooldowns: sim.cooldowns, charges: sim.spellCharges, resource: sim.resource, events: sim.events,
+    targets: sim.targets, damage: sim.totalDamage, loadout: sim.loadout});
+  sim.configureKeybindings(codes);
+  assert.equal(sim.phase, 'paused');
+  assert.equal(sim.spells, spells); assert.equal(sim.spellMap, spellMap); assert.equal(sim.cast, cast);
+  assert.equal(cast.spellDef, sim.spellMap.get('veil-bolt'));
+  assert.equal(cast.spellDef.key, 'Q');
+  assert.deepEqual(sim.spells.map(({key, keyCode, ...spell}) => spell), definitions);
+  assert.equal(JSON.stringify({tick: sim.tick, time: sim.time, gcd: sim.gcdUntil, rng: sim.rngState,
+    cooldowns: sim.cooldowns, charges: sim.spellCharges, resource: sim.resource, events: sim.events,
+    targets: sim.targets, damage: sim.totalDamage, loadout: sim.loadout}), state);
+  sim.resume(); sim.advance(1.1);
+  assert.equal(sim.totalDamage, 1150); assert.equal(sim.cast, null);
+  assert.equal(sim.spells[0].key, 'Q');
+});
+
+test('slot bindings follow loadout reorder, reduced loadouts, reset and restart', () => {
+  const codes = ['KeyQ', 'KeyE', 'KeyR', 'Digit4', 'Digit5'];
+  const sim = new RaidSim({keybindings: codes});
+  const selection = loadout(['focused-energy', 'chain-strike', 'astral-flare']);
+  sim.configureLoadout(selection);
+  assert.deepEqual(sim.spells.map(spell => [spell.id, spell.key, spell.keyCode]), [
+    ['focused-energy', 'Q', 'KeyQ'], ['chain-strike', 'E', 'KeyE'], ['astral-flare', 'R', 'KeyR'],
+  ]);
+  for (const spell of sim.spells) assert.equal(sim.spellMap.get(spell.id), spell);
+  sim.start(); sim.use('focused-energy'); sim.stop();
+  sim.configureLoadout(loadout(['astral-flare', 'focused-energy', 'chain-strike']));
+  assert.equal(sim.spells[0].keyCode, 'KeyQ');
+  sim.start();
+  assert.deepEqual(sim.keybindings, codes);
+  assert.deepEqual(sim.spells.map(spell => spell.keyCode), codes.slice(0, 3));
+  assert.equal(sim.summary, null); assert.equal(sim.totalDamage, 0);
+  sim.stop(); sim.configureLoadout(loadout(['astral-flare'])); sim.start();
+  assert.equal(sim.spells.length, 1); assert.equal(sim.spells[0].key, 'Q');
+  assert.deepEqual(sim.keybindings, codes);
+});
+
+test('stopped summary freezes key labels while snapshots report current bindings and spells', () => {
+  const oldCodes = ['KeyQ', 'KeyE', 'KeyR', 'Digit4', 'Digit5'];
+  const sim = fresh(undefined, {keybindings: oldCodes});
+  sim.use('astral-flare'); sim.advance(1); sim.stop();
+  const summary = structuredClone(sim.summary);
+  assert.deepEqual(summary.keyLabels, ['Q', 'E', 'R', '4', '5']);
+  assert.deepEqual(summary.keybindings, oldCodes);
+  sim.configureKeybindings(DEFAULT_BINDINGS);
+  sim.configureLoadout(loadout(['focused-energy', 'astral-flare']));
+  assert.deepEqual(sim.summary, summary); assert.deepEqual(sim.metrics(), summary);
+  const snapshot = sim.snapshot();
+  assert.deepEqual(snapshot.keybindings, DEFAULT_BINDINGS);
+  assert.deepEqual(snapshot.keyLabels, SLOT_KEYS);
+  assert.deepEqual(snapshot.availableSpells.map(({id, key, keyCode}) => ({id, key, keyCode})), [
+    {id: 'focused-energy', key: '1', keyCode: 'Digit1'},
+    {id: 'astral-flare', key: '2', keyCode: 'Digit2'},
+  ]);
+  const metrics = sim.metrics(); metrics.keyLabels[0] = 'Z'; metrics.keybindings[0] = 'KeyZ';
+  assert.deepEqual(sim.summary, summary);
+  sim.start(); sim.stop();
+  assert.deepEqual(sim.summary.keyLabels, SLOT_KEYS);
+  assert.deepEqual(sim.summary.loadout.abilities, ['focused-energy', 'astral-flare']);
+});
+
+test('long key names fit complete Canvas icon bounds at HUD and above-player sizes', () => {
+  const codes = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Semicolon', 'KeyQ',
+    ...Array.from({length: 10}, (_, digit) => `Numpad${digit}`),
+    'NumpadAdd', 'NumpadSubtract', 'NumpadMultiply', 'NumpadDivide', 'NumpadDecimal', 'NumpadComma', 'NumpadEqual'];
+  for (const size of [42, 58, 80]) for (const code of codes) {
+    const key = keyLabel(code);
+    const {context, labels, canvas} = recordingContext(size, size);
+    drawSpellIcon(context, 'astral-flare', 0, 0, size, {key, cooldown: 4, cooldownMax: 8, storedCharges: true, charges: 2, maxCharges: 3});
+    const text = labels.find(label => label.text === key);
+    assert.ok(text, `${code} is drawn in full`);
+    const {metrics, transform, strokeWidth} = text;
+    const left = (text.x - metrics.actualBoundingBoxLeft - strokeWidth / 2) * transform.a + transform.e;
+    const right = (text.x + metrics.actualBoundingBoxRight + strokeWidth / 2) * transform.a + transform.e;
+    const top = (text.y - metrics.actualBoundingBoxAscent - strokeWidth / 2) * transform.d + transform.f;
+    const bottom = (text.y + metrics.actualBoundingBoxDescent + strokeWidth / 2) * transform.d + transform.f;
+    assert.ok(left >= 0 && right <= size && top >= 0 && bottom <= size,
+      `${code} ${size}px bounds ${left},${right},${top},${bottom}`);
+    if (key.length === 1) {
+      assert.equal(text.x, 13); assert.equal(text.y, 14); assert.match(text.font, /15px/);
+    }
+    assert.ok(canvas.getContext('2d').getImageData(0, 0, size, size).data.some(value => value));
+  }
+});
+
 test('starting composition retains enemies above the player for both layouts', () => {
   for (const layout of ['spread', 'clustered']) {
     const sim = fresh(undefined, {layout}); sim.spawnWave(); sim.spawnWave();
@@ -87,7 +219,7 @@ test('shared resource readiness follows the resolved spender cost and consumptio
   assert.equal(spellReadiness(flexible, 'veil-bolt').locked, true);
 });
 
-test('stored spell charges and serial recharge are separate from shared VOID', () => {
+test('stored spell charges and serial recharge are separate from shared Astral charges', () => {
   const sim = fresh(loadout(['astral-flare', 'destructive-rift'], {'astral-flare': 'v3'}));
   sim.resource.value = 2;
   assert.equal(spellReadiness(sim, 'astral-flare').ready, 'charges');
@@ -133,6 +265,27 @@ test('cooldown, captured GCD duration and pause remain independent', () => {
   sim.resume(); sim.advance(7.6); assert.equal(spellReadiness(sim, 'astral-flare').cooldown, 0);
 });
 
+test('Veil cooldown clocks follow the new base and inherited variants while Light Veil stays ready', () => {
+  for (const talent of [null, 'v1', 'v2', 'v3']) {
+    const sim = fresh(loadout(['veil-bolt'], talent ? {'veil-bolt': talent} : {}));
+    const cooldown = talent === 'v1' ? 0 : 6;
+    assert.equal(spellReadiness(sim, 'veil-bolt').cooldownMax, cooldown);
+    sim.use('veil-bolt'); sim.advance(1.5);
+    const state = spellReadiness(sim, 'veil-bolt');
+    assert.equal(state.cooldown, cooldown);
+    assert.equal(state.gcd, 0);
+    const {context, words} = recordingContext(80, 80);
+    drawSpellIcon(context, 'veil-bolt', 0, 0, 80, state);
+    assert.equal(words.includes('CD'), cooldown > 0);
+    assert.equal(words.includes('6.0'), cooldown > 0);
+    const view = buildHud(sim).abilities[0];
+    assert.equal(view.cooldown, cooldown);
+    sim.advance(6);
+    assert.equal(spellReadiness(sim, 'veil-bolt').cooldown, 0);
+    assert.equal(sim.canCast('veil-bolt'), null);
+  }
+});
+
 test('real clock drawing uses numeric labels, remaining sectors and remapped keys', () => {
   const {context, words, arcs} = recordingContext(80, 80);
   drawSpellIcon(context, 'astral-flare', 0, 0, 80, {cooldown: 4, cooldownMax: 8, gcd: .6, gcdMax: 1.2, key: 'R'});
@@ -146,10 +299,10 @@ test('real clock drawing uses numeric labels, remaining sectors and remapped key
 test('HUD derives generator, spender, charge, buff and ability labels from selected definitions', () => {
   const sim = fresh(loadout(['gloam-thread', 'destructive-rift', 'astral-flare', 'focused-energy'], {'gloam-thread': 'v2', 'astral-flare': 'v3'}));
   let view = buildHud(sim);
-  assert.deepEqual(view.resource, {value: 0, max: 3, label: 'VOID', hasGenerator: true, hasSpender: true});
+  assert.deepEqual(view.resource, {value: 0, max: 3, label: 'Astral charges', hasGenerator: true, hasSpender: true});
   assert.equal(Object.hasOwn(view, 'proc'), false);
   assert.deepEqual(view.abilities.map(spell => spell.id), sim.spells.map(spell => spell.id));
-  assert.match(view.abilities[2].label, /3\/3 charges/);
+  assert.match(view.abilities[2].label, /3\/3 stored charges/);
   sim.use('focused-energy'); view = buildHud(sim);
   assert.equal(view.buffs[0].name, 'Focused Energy'); assert.equal(view.buffs[0].seconds, 15);
   const multiplier = fresh(loadout(['focused-energy'], {'focused-energy': 'v3'}));
@@ -184,10 +337,33 @@ test('arena ready cues reflect selected spells, current charges and remapped key
   const renderer = new ArenaRenderer(createCanvas(1000, 560));
   const {context, words} = recordingContext();
   renderer.player(context, sim);
-  assert.ok(words.includes('Q')); assert.ok(words.includes('E')); assert.ok(!words.includes('5'));
+  assert.ok(words.includes('1')); assert.ok(words.includes('2')); assert.ok(!words.includes('5'));
   sim.resource.value = 0; sim.spellCharges['astral-flare'].current = 0; words.length = 0;
   renderer.player(context, sim);
   assert.deepEqual(words, ['YOU']);
+});
+
+test('custom labels stay identical across HUD, readiness and complete arena renders', () => {
+  const codes = ['ArrowRight', 'Space', 'Numpad0', 'Semicolon', 'KeyQ'];
+  const sim = fresh(loadout(['destructive-rift', 'astral-flare', 'area-pulse'], {'astral-flare': 'v3', 'area-pulse': 'v3'}), {keybindings: codes});
+  sim.resource.value = 3;
+  const {canvas, context, words} = recordingContext();
+  canvas.getBoundingClientRect = () => ({left: 0, top: 0, width: 1000, height: 560});
+  const renderer = new ArenaRenderer(canvas); renderer.ctx = context;
+  const check = () => {
+    const view = buildHud(sim);
+    assert.deepEqual(view.abilities.map(spell => spell.key), sim.keybindings.slice(0, 3).map(keyLabel));
+    for (const spell of view.abilities) {
+      assert.equal(spell.state.key, spell.key);
+      assert.equal(spellReadiness(sim, spell.id).key, spell.key);
+      assert.equal(spell.keyCode, sim.keybindings[spell.index]);
+    }
+    words.length = 0; renderer.draw(sim);
+    for (const spell of view.abilities) assert.ok(words.includes(spell.key), `${spell.key} appears above the player`);
+    assert.ok(canvas.getContext('2d').getImageData(0, 0, 1000, 560).data.some(value => value));
+  };
+  check(); sim.pause(); sim.configureKeybindings(DEFAULT_BINDINGS); check();
+  sim.resume(); check();
 });
 
 test('all generic effect visuals, maintenance rings, links and hazards draw on a real canvas', () => {
@@ -293,4 +469,13 @@ test('hostile circle and lane warning colors are red, while target and friendly 
   sim.tick += HZ / 4;
   renderer.magic(context, sim);
   assert.ok(colors.some(color => String(color).startsWith('#bc9dff')), 'friendly area spell retains its ability color');
+});
+
+test('HUD falls back to Astral charges and distinguishes stored spell readiness', () => {
+  const sim = new RaidSim({mechanics: false, loadout: {abilities: ['destructive-rift', 'astral-flare'], talents: {'astral-flare': 'v3'}}});
+  sim.resource.label = '';
+  const view = buildHud(sim);
+  assert.equal(view.resource.label, 'Astral charges');
+  assert.equal(view.abilities[0].label, '0/3 Astral charges');
+  assert.match(view.abilities[1].label, /3\/3 stored charges/);
 });

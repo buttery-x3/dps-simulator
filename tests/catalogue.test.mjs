@@ -40,6 +40,24 @@ for (const ability of ABILITIES) for (const talentId of [null, ...ability.talent
   });
 }
 
+test('player-facing catalogue uses Astral charges while preserving compatibility IDs and ability names', () => {
+  assert.equal(CATALOGUE.resource.id, 'void');
+  assert.equal(ABILITIES.find(ability => ability.id === 'lingering-glimmer').talents[0].name, 'Lingering Resource');
+  for (const ability of ABILITIES) for (const talentId of [null, ...ability.talents.map(talent => talent.id)]) {
+    const compiled = compileAbility(ability.id, talentId);
+    assert.doesNotMatch(`${compiled.name} ${compiled.description} ${compiled.type}`, /\bvoid\b/i);
+    const gains = [...compiled.effects, ...compiled.triggers.flatMap(trigger => trigger.effects)]
+      .some(effect => effect.type === 'resource' || effect.modifiers?.resourceGain);
+    if (gains || compiled.cost && ['base', 'v1', 'v2'].includes(talentId ?? 'base')) {
+      assert.match(compiled.description, /Astral charge/);
+    }
+    if (compiled.charges > 1) assert.match(compiled.type, /stored spell charges/);
+  }
+  const warning = validateLoadout({abilities: ['veil-bolt'], talents: {'veil-bolt': 'v3'}}).warnings.join(' ');
+  assert.match(warning, /generates Astral charges/);
+  assert.doesNotMatch(warning, /\bvoid\b/i);
+});
+
 test('source catalogue and default loadout are deeply frozen', () => {
   assert.ok(Object.isFrozen(CATALOGUE));
   assert.ok(Object.isFrozen(ABILITIES[0].talents[0].patch.effects[0]));
@@ -72,6 +90,32 @@ test('all Glimmer variants stay instant DoTs with correctly scoped triggers', ()
   assert.deepEqual(compileAbility('lingering-glimmer', 'v1').triggers, [{event: 'periodicTick', chance: 0.02, effects: [{type: 'resource', amount: 1}]}]);
   assert.deepEqual(compileAbility('lingering-glimmer', 'v2').triggers, [{event: 'cast', chance: 0.5, effects: [{type: 'restoreCooldown', abilityId: 'astral-flare'}]}]);
   assert.equal(compileAbility('lingering-glimmer', 'v3').effects[0].duration, 36);
+});
+
+test('Veil inversion keeps stable IDs and explicit damage/cooldown inheritance', () => {
+  const bolt = ABILITIES.find(ability => ability.id === 'veil-bolt');
+  assert.deepEqual(bolt.talents.map(({id, name}) => [id, name]), [
+    ['v1', 'Light Veil'], ['v2', 'Lingering Touch'], ['v3', 'Charged Veil'],
+  ]);
+  for (const [talent, amount, cooldown] of [[null, 1150, 6], ['v1', 640, 0], ['v2', 640, 6], ['v3', 1150, 6]]) {
+    const ability = compileAbility('veil-bolt', talent);
+    assert.deepEqual(ability.activation, {kind: 'cast', duration: 1.5, moving: false});
+    assert.equal(ability.gcd, 1.2);
+    assert.equal(ability.cooldown, cooldown);
+    assert.equal(ability.charges, 1);
+    assert.deepEqual(ability.effects[0], {type: 'damage', amount});
+    assert.equal(ability.effects.length, talent === 'v2' ? 2 : 1);
+    if (talent !== 'v3') assert.deepEqual(ability.triggers, []);
+  }
+  assert.deepEqual(compileAbility('veil-bolt', 'v2').effects[1], {
+    type: 'dot', id: 'lingering-touch', name: 'Lingering Touch', duration: 18,
+    interval: 3, amount: 180, carry: 0.3, maintenance: true,
+  });
+  assert.deepEqual(compileAbility('veil-bolt', 'v3').triggers,
+    [{event: 'hit', chance: 0.2, effects: [{type: 'resource', amount: 1}]}]);
+  assert.equal(Object.hasOwn(bolt.talents[1].patch, 'cooldown'), false);
+  assert.equal(Object.hasOwn(bolt.talents[2].patch, 'cooldown'), false);
+  assert.equal(Object.hasOwn(bolt.talents[2].patch, 'effects'), false);
 });
 
 test('Thread completion resource, ramp and nearest-target split are declarative', () => {
@@ -118,7 +162,7 @@ test('Focus affects only cast/GCD timing and optional builder gains', () => {
 });
 
 test('loadout compiler maps chosen order onto only five action-bar keys', () => {
-  assert.deepEqual(SLOT_KEYS, ['Q', 'E', 'R', '4', '5']);
+  assert.deepEqual(SLOT_KEYS, ['1', '2', '3', '4', '5']);
   const result = compileLoadout(DEFAULT_LOADOUT);
   assert.equal(result.length, 5);
   result.forEach((ability, index) => {
@@ -151,7 +195,7 @@ test('invalid loadout count, duplicate, unknown, extra key and unselected talent
 test('composition warnings never silently add a generator or sixth utility', () => {
   const spender = validateLoadout({abilities: ['destructive-rift']});
   assert.equal(spender.valid, true);
-  assert.match(spender.warnings.join(' '), /no resource generator/);
+  assert.match(spender.warnings.join(' '), /no Astral charge generator/);
   const balanced = validateLoadout({abilities: ['destructive-rift', 'gloam-thread'], talents: {'gloam-thread': 'v2'}});
   assert.deepEqual(balanced.warnings, []);
   const dependent = validateLoadout({abilities: ['lingering-glimmer'], talents: {'lingering-glimmer': 'v2'}});
@@ -180,7 +224,7 @@ test('invalid compiled variants are rejected even when their bases are valid', (
 test('rejects invalid numbers, fractional counts, timing and impossible charging', () => {
   for (const value of [NaN, Infinity, -Infinity, -1, 0, 1e-10]) invalid(changed(c => { c.abilities[0].gcd = value; }));
   invalid(changed(c => { c.abilities[0].charges = 1.5; }), /integer/);
-  invalid(changed(c => { c.abilities[0].charges = 3; }), /positive cooldown/);
+  invalid(changed(c => { c.abilities[0].charges = 3; c.abilities[0].cooldown = 0; }), /positive cooldown/);
   invalid(changed(c => { c.abilities[0].cooldown = 0.0001; }), /simulation tick/);
   invalid(changed(c => { c.abilities[2].activation.interval = 0; }), /interval/);
   invalid(changed(c => { c.abilities[2].activation.interval = 0.7; }), /whole number/);
@@ -296,7 +340,7 @@ test('new JSON spell and talent compile without engine edits', async () => {
   assert.equal(result[0].activation.duration, 1.25);
   assert.equal(result[0].activation.moving, true);
   assert.deepEqual(result[0].effects, [{type: 'damage', amount: 500}]);
-  assert.equal(result[0].key, 'Q');
+  assert.equal(result[0].key, '1');
   assert.equal(ABILITIES.length, 8);
   const {RaidSim} = await import('../src/lib/engine.js');
   const sim = new RaidSim({catalogue: extended, loadout: {abilities: ['dusk-lance'], talents: {'dusk-lance': 'drifting-lance'}}, mechanics: false});

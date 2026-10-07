@@ -1,6 +1,7 @@
 /** Portable deterministic combat simulation. Integer 60 Hz clock; declarative spells. */
 import {CATALOGUE, DEFAULT_LOADOUT, compileLoadout, validateCatalogue, validateLoadout} from './catalogue.js';
 import {applyEffects} from './effect-handlers.js';
+import {DEFAULT_BINDINGS, keyLabel, validateBindings} from './keybindings.js';
 export const HZ = 60;
 export const WORLD = {width: 1000, height: 560, margin: 30};
 const ticks = seconds => Math.round(seconds * HZ);
@@ -11,7 +12,7 @@ const clone = value => JSON.parse(JSON.stringify(value));
 export const SPELLS = compileLoadout(DEFAULT_LOADOUT);
 
 export class RaidSim {
-  constructor({seed = 72821, loadout = DEFAULT_LOADOUT, mechanics = true, layout = 'spread', catalogue = CATALOGUE} = {}) {
+  constructor({seed = 72821, loadout = DEFAULT_LOADOUT, mechanics = true, layout = 'spread', catalogue = CATALOGUE, keybindings = DEFAULT_BINDINGS} = {}) {
     const validation = validateCatalogue(catalogue);
     if (!validation.valid) throw new Error(`Invalid catalogue: ${validation.errors.join('; ')}`);
     if (!['spread', 'clustered'].includes(layout)) throw new Error('Unknown target layout');
@@ -19,16 +20,32 @@ export class RaidSim {
     this.seed = seed >>> 0 || 1;
     this.mechanics = mechanics;
     this.layout = layout;
+    this.configureKeybindings(keybindings);
     this.configureLoadout(loadout);
     this.reset();
   }
   toTicks(seconds) { return ticks(seconds); }
+  configureKeybindings(bindings) {
+    if (this.phase === 'running') throw new Error('Pause the active session before changing keybindings.');
+    const validation = validateBindings(bindings);
+    if (!validation.valid) throw new Error(validation.errors.join('; '));
+    // Bindings belong to slots, not spells. Update labels in place so paused casts,
+    // effects and the spell map retain their original combat definitions/state.
+    const next = [...bindings];
+    const labels = next.map(keyLabel);
+    this.keybindings = next;
+    for (const [index, spell] of (this.spells || []).entries()) {
+      spell.key = labels[index];
+      spell.keyCode = next[index];
+    }
+  }
   configureLoadout(loadout) {
     if (['running', 'paused'].includes(this.phase)) throw new Error('Stop the active session before changing loadout.');
     const validation = validateLoadout(loadout, this.catalogue);
     if (!validation.valid) throw new Error(validation.errors.join('; '));
     this.loadout = clone(loadout);
     this.spells = compileLoadout(loadout, this.catalogue);
+    this.configureKeybindings(this.keybindings);
     this.spellMap = new Map(this.spells.map(spell => [spell.id, spell]));
     this.loadoutWarnings = validation.warnings;
     this.maintenanceDots = [...new Map(this.spells.flatMap(spell => [...spell.effects, ...spell.triggers.flatMap(trigger => trigger.effects)]
@@ -44,7 +61,7 @@ export class RaidSim {
     this.cooldowns = Object.fromEntries(this.spells.map(s => [s.id, 0]));
     this.spellCharges = Object.fromEntries(this.spells.filter(s => s.charges > 1)
       .map(s => [s.id, {current: s.charges, max: s.charges, nextRecharge: 0}]));
-    this.resource = {value: 0, max: this.catalogue.resource.max, label: 'VOID'};
+    this.resource = {value: 0, max: this.catalogue.resource.max, label: 'Astral charges'};
     this.buffs = {}; this.links = []; this.hazards = []; this.effects = []; this.events = []; this.damageEvents = [];
     this.totalDamage = 0; this.damageTaken = 0; this.hitsTaken = 0; this.kills = 0; this.escaped = 0;
     this.interrupts = 0; this.wastedShards = 0; this.breakdown = {}; this.targetDamage = {}; this.castCounts = {};
@@ -52,7 +69,7 @@ export class RaidSim {
     this.nextWave = ticks(14); this.nextHazard = ticks(6); this.wave = 0; this.hazardCount = 0; this.eventId = 0; this.summary = null;
     this.notice = {text: this.loadoutWarnings[0] || 'Choose your rhythm. Keep damage rolling and dodge red ground marks.', kind: this.loadoutWarnings.length ? 'warn' : 'info', until: ticks(5)};
   }
-  // Shared resource alias retained for metrics adapters, never stored spell charges.
+  // Compatibility alias for shared Astral charges, never stored spell charges.
   get shards() { return this.resource.value; }
   set shards(value) { this.resource.value = clamp(Number.isFinite(value) ? value : 0, 0, this.resource.max); }
   rand() { let x = this.rngState; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.rngState = x >>> 0; return this.rngState / 4294967296; }
@@ -97,9 +114,9 @@ export class RaidSim {
     if (this.cast?.kind === 'cast') return 'Already casting';
     if ((this.input.x || this.input.y) && spell.activation.kind !== 'instant' && !spell.activation.moving) return 'Stand still to cast';
     const charges = this.spellCharges[id];
-    if (charges && charges.current < 1) return 'No stored charges ready';
+    if (charges && charges.current < 1) return 'No stored spell charges ready';
     if (!charges && this.tick < this.cooldowns[id]) return `${spell.name} is cooling down`;
-    if (spell.cost && this.resource.value < spell.cost.min) return `Requires ${spell.cost.min} void resource`;
+    if (spell.cost && this.resource.value < spell.cost.min) return `Requires ${spell.cost.min} Astral charge${spell.cost.min === 1 ? '' : 's'}`;
     if (spell.gcd * this.modifier('gcd') < 1 / HZ) return 'Effective global cooldown is below one simulation tick';
     if (spell.activation.kind === 'cast' && spell.activation.duration * this.modifier('castTime') < 1 / HZ) return 'Effective cast time is below one simulation tick';
     return null;
@@ -335,6 +352,7 @@ export class RaidSim {
     const available = coverageDetails.reduce((n, entry) => n + entry.availableTicks, 0);
     const dotCoverage = coverageDetails.length ? available ? covered / available : 0 : null;
     return {seed: this.seed, loadout: clone(this.loadout), layout: this.layout, mechanics: this.mechanics,
+      keybindings: [...this.keybindings], keyLabels: this.keybindings.map(keyLabel),
       elapsed: duration, totalDamage: this.totalDamage, sessionDps: duration ? this.totalDamage / duration : 0,
       rollingDps: window ? this.damageEvents.reduce((sum, event) => sum + event.amount, 0) / window : 0, rollingSeconds: window,
       damageTaken: this.damageTaken, hitsTaken: this.hitsTaken, kills: this.kills, escaped: this.escaped,
@@ -342,12 +360,13 @@ export class RaidSim {
       breakdown: {...this.breakdown}, castCounts: {...this.castCounts}, spellNames: Object.fromEntries(this.spells.map(spell => [spell.id, spell.name]))};
   }
   snapshot() {
-    return {phase: this.phase, ...this.metrics(), player: {...this.player}, selectedId: this.selectedId,
+    return {phase: this.phase, ...this.metrics(), keybindings: [...this.keybindings], keyLabels: this.keybindings.map(keyLabel),
+      player: {...this.player}, selectedId: this.selectedId,
       targets: this.targets.map(target => ({id: target.id, name: target.name, kind: target.kind,
         hp: target.kind === 'dummy' ? null : target.hp, maxHp: target.kind === 'dummy' ? null : target.maxHp,
         dots: Object.entries(target.dots).map(([id, dot]) => ({id, name: dot.name, seconds: Math.max(0, (dot.expires - this.tick) / HZ)}))})),
       resource: {...this.resource}, storedCharges: clone(this.spellCharges), buffs: clone(this.buffs),
-      availableSpells: this.spells.map(spell => ({id: spell.id, name: spell.name, key: spell.key, talent: spell.talentName,
+      availableSpells: this.spells.map(spell => ({id: spell.id, name: spell.name, key: spell.key, keyCode: spell.keyCode, talent: spell.talentName,
         cooldownSeconds: Math.max(0, (this.cooldowns[spell.id] - this.tick) / HZ)})),
       gcdSeconds: Math.max(0, (this.gcdUntil - this.tick) / HZ),
       cast: this.cast ? {spell: this.cast.spell, kind: this.cast.kind, remaining: (this.cast.ends - this.tick) / HZ} : null};

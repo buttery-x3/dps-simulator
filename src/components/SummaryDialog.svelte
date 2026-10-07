@@ -48,7 +48,7 @@
       {#each summary.coverageDetails ?? [] as coverage (coverage.id)}
         <div class="summary-detail coverage-detail" data-coverage={coverage.id}><span>{coverage.name}</span><strong>{Math.round(coverage.ratio * 100)}%</strong></div>
       {/each}
-      <div class="summary-detail"><span>Movement interrupts / void overcapped</span><strong>{summary.interrupts} / {summary.wastedShards}</strong></div>
+      <div class="summary-detail"><span>Movement interrupts / Astral charges overcapped</span><strong>{summary.interrupts} / {summary.wastedShards}</strong></div>
       <div class="summary-breakdown">
         <h3>Damage by spell</h3>
         {#each rows as [id, damage] (id)}
@@ -63,7 +63,7 @@
       </div>
       <div class="summary-loadout"><h3>Session loadout</h3><ol>{#each selected as id, index (id)}
         {@const spell = compileAbility(id, summary.loadout.talents?.[id])}
-        <li><kbd>{SLOT_KEYS[index]}</kbd> {summary.spellNames?.[id] ?? names[id] ?? id}{#if summary.loadout.talents?.[id]}<span> · {spell.talentName}</span>{/if}</li>
+        <li><kbd>{summary.keyLabels?.[index] ?? SLOT_KEYS[index]}</kbd> {summary.spellNames?.[id] ?? names[id] ?? id}{#if summary.loadout.talents?.[id]}<span> · {spell.talentName}</span>{/if}</li>
       {/each}</ol></div>
       <p class="summary-formula">DPS uses total damage ÷ exact active time ({summary.elapsed.toFixed(3)}s). Coverage pools every selected maintenance DoT across all live-target time, including the wait before the first application. With no maintenance DoTs, coverage is not applicable. Absorbed or overkill damage is not counted. Seed {summary.seed} · {summary.layout ?? 'spread'} echoes.</p>
     {/if}

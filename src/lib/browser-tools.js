@@ -1,5 +1,5 @@
 export function registerTrainingTools(context, actions) {
-  const {sim, startSession, pauseSession, resumeSession, stopSession, configure, selectTarget, castSpell} = actions;
+  const {sim, readSession = () => sim.snapshot(), startSession, pauseSession, resumeSession, stopSession, configure, selectTarget, castSpell} = actions;
   if (!context?.registerTool) return () => {};
   const lifecycle = new AbortController();
   const obj = (input, keys) => {
@@ -15,7 +15,7 @@ export function registerTrainingTools(context, actions) {
     } catch { /* Browser-tool support is optional; registration must not break play. */ }
   };
   const empty = {type: 'object', properties: {}, additionalProperties: false};
-  register('read_training_session', 'Read current real-time training state, selected ability IDs and key mappings, the available catalogue, and exact metrics. Does not advance time.', empty, input => { obj(input, []); return sim.snapshot(); }, true);
+  register('read_training_session', 'Read current real-time training state, current setup and validation, selected ability IDs and current physical spell key codes/labels by slot, shared Astral charges, separate stored spell charges, and exact metrics. An empty setup draft has no equipped spells and cannot start. Stopped metrics retain their completed loadout; setup describes the next-session draft. Does not advance time.', empty, input => { obj(input, []); return readSession(); }, true);
   register('start_training_session', 'Start a new session using the current setup. Resets prior results. Runs only at real-time speed in a visible page.', empty, input => {
     obj(input, []); if (['running', 'paused'].includes(sim.phase)) throw new Error('A session is already active.'); return startSession();
   });
@@ -36,7 +36,7 @@ export function registerTrainingTools(context, actions) {
   register('select_training_target', 'Select a live target from the session snapshot.', {
     type: 'object', properties: {targetId: {type: 'string'}}, required: ['targetId'], additionalProperties: false,
   }, input => { obj(input, ['targetId']); if (typeof input.targetId !== 'string' || !sim.target(input.targetId)) throw new Error('Target does not exist.'); return selectTarget(input.targetId); });
-  register('cast_training_spell', 'Attempt one currently selected ability by its spell ID from read_training_session. Respects the live global cooldown, activation, movement, range, stored charges, and shared-resource rules.', {
+  register('cast_training_spell', 'Attempt one currently selected ability by its spell ID from read_training_session. Respects the live global cooldown, activation, movement, range, stored spell charges, and shared Astral charge rules.', {
     type: 'object', properties: {spell: {type: 'string'}}, required: ['spell'], additionalProperties: false,
   }, input => {
     obj(input, ['spell']);

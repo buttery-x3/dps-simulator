@@ -1,11 +1,23 @@
+<script module>
+  import {ABILITIES, SLOT_KEYS, TALENT_BUDGET, compileAbility} from '../lib/catalogue.js';
+  // Preview definitions never depend on the selected loadout or combat frames.
+  const talentVariants = new Map(ABILITIES.flatMap(ability => ability.talents.map(talent => [
+    `${ability.id}:${talent.id}`, compileAbility(ability.id, talent.id),
+  ])));
+</script>
+
 <script>
   import SpellIcon from './SpellIcon.svelte';
+  import AbilityDetails from './AbilityDetails.svelte';
+  import {describeAbility} from '../lib/ability-details.js';
+  import {abilityTooltip} from '../lib/ability-tooltip.js';
 
   let {
     abilities = [],
     loadout = { abilities: [], talents: {} },
-    keys = ['Q', 'E', 'R', '4', '5'],
+    keys = ['1', '2', '3', '4', '5'],
     disabled = false,
+    tooltipsEnabled = true,
     warnings = [],
     idPrefix = 'loadout',
     onchange = () => {},
@@ -15,20 +27,19 @@
   const selected = $derived(loadout.abilities ?? []);
   const talents = $derived(loadout.talents ?? {});
   const spent = $derived(Object.values(talents).filter(Boolean).length);
-  const currentDetail = $derived.by(() => {
-    if (!inspected) return null;
-    const ability = abilities.find(item => item.id === inspected.abilityId);
-    if (!ability) return null;
-    const talent = ability.talents?.find(item => item.id === inspected.talentId);
-    return talent ? { name: talent.name, type: `${ability.name} · TALENT`, detail: talent.detail ?? talent.description }
-      : { name: ability.name, type: ability.type, detail: ability.detail ?? ability.description };
-  });
+  const abilityDetails = $derived(Object.fromEntries(abilities.map(ability => [ability.id,
+    describeAbility(ability, {key: keys[selected.indexOf(ability.id)] ?? ''})])));
+  const talentDetails = $derived(Object.fromEntries(abilities.flatMap(ability => (ability.talents ?? []).map(talent => [
+    `${ability.id}:${talent.id}`, describeAbility(talentVariants.get(`${ability.id}:${talent.id}`), {key: keys[selected.indexOf(ability.id)] ?? ''}),
+  ]))));
+  const currentDetail = $derived(inspected ? inspected.talentId
+    ? talentDetails[`${inspected.abilityId}:${inspected.talentId}`] : abilityDetails[inspected.abilityId] : null);
 
   function inspect(abilityId, talentId = null) { inspected = { abilityId, talentId }; }
   function toggleAbility(id) {
     if (disabled) return;
     const index = selected.indexOf(id);
-    if (index < 0 && selected.length >= keys.length) return;
+    if (index < 0 && selected.length >= SLOT_KEYS.length) return;
     const next = index < 0 ? [...selected, id] : selected.filter(ability => ability !== id);
     const nextTalents = { ...talents };
     if (index >= 0) delete nextTalents[id];
@@ -39,7 +50,7 @@
     const next = { ...talents };
     if (next[abilityId] === talentId) delete next[abilityId];
     else {
-      if (!next[abilityId] && spent >= 5) return;
+      if (!next[abilityId] && spent >= TALENT_BUDGET) return;
       next[abilityId] = talentId;
     }
     onchange({ abilities: [...selected], talents: next });
@@ -55,8 +66,8 @@
 
 <section class="loadout-picker" aria-label="Choose abilities and talents">
   <div class="loadout-heading">
-    <div><h3>Make it your rotation</h3><p>Choose up to five abilities. Add one talent per ability, or leave points unspent.</p></div>
-    <div class="loadout-budget" aria-live="polite"><strong>{selected.length}/5 abilities</strong><span>{5 - spent} talent point{5 - spent === 1 ? '' : 's'} available</span></div>
+    <div><h3>Make it your rotation</h3><p>Choose up to {SLOT_KEYS.length} abilities. Add one talent per ability, or leave points unspent.</p></div>
+    <div class="loadout-budget" aria-live="polite"><strong>{selected.length}/{SLOT_KEYS.length} abilities</strong><span>{TALENT_BUDGET - spent} talent point{TALENT_BUDGET - spent === 1 ? '' : 's'} available</span></div>
   </div>
   {#if disabled}<p class="loadout-lock">Stop the session to change your loadout.</p>{/if}
   <ol class="loadout-slots" aria-label="Action bar order">
@@ -77,9 +88,9 @@
     {#each abilities as ability (ability.id)}
       {@const index = selected.indexOf(ability.id)}
       {@const picked = index >= 0}
-      {@const atLimit = !picked && selected.length >= keys.length}
+      {@const atLimit = !picked && selected.length >= SLOT_KEYS.length}
       <div class="ability-node" data-ability={ability.id} class:selected={picked} style:--node-color={ability.color}>
-        <button type="button" class="ability-orb" class:selected={picked} aria-disabled={disabled || atLimit} aria-pressed={picked} aria-label={`${ability.name}${picked ? `, assigned to ${keys[index]}` : atLimit ? ', five abilities selected; remove one first' : ', add ability'}`} aria-describedby={`${idPrefix}-detail`} data-ability-option={ability.id} onfocus={() => inspect(ability.id)} onpointerenter={() => inspect(ability.id)} onclick={() => { inspect(ability.id); toggleAbility(ability.id); }}>
+        <button type="button" class="ability-orb" class:selected={picked} aria-disabled={disabled || atLimit} aria-pressed={picked} aria-label={`${ability.name}${picked ? `, assigned to ${keys[index]}` : atLimit ? `, ${SLOT_KEYS.length} abilities selected; remove one first` : ', add ability'}`} aria-describedby={`${idPrefix}-detail`} data-ability-option={ability.id} use:abilityTooltip={{detail: abilityDetails[ability.id], disabled: !tooltipsEnabled, revision: loadout}} onfocus={() => inspect(ability.id)} onpointerenter={() => inspect(ability.id)} onclick={() => { inspect(ability.id); toggleAbility(ability.id); }}>
           <SpellIcon id={ability.icon ?? ability.id} size={144} class="loadout-orb-icon" state={{ key: picked ? keys[index] : '' }} />
           {#if picked}<span class="orb-selected" aria-hidden="true">✓</span>{/if}
         </button>
@@ -88,17 +99,17 @@
         <div class="talent-branches" aria-label={`${ability.name} talents`}>
           {#each ability.talents ?? [] as talent, talentIndex (talent.id)}
             {@const chosen = talents[ability.id] === talent.id}
-            <button type="button" class="talent-orb" class:selected={chosen} aria-disabled={disabled || !picked} aria-pressed={chosen} aria-label={`${talent.name}, ${ability.name} talent${!picked ? ', select this ability first' : ''}`} aria-describedby={`${idPrefix}-detail`} title={talent.name} data-talent-option={talent.id} onfocus={() => inspect(ability.id, talent.id)} onpointerenter={() => inspect(ability.id, talent.id)} onclick={() => { inspect(ability.id, talent.id); toggleTalent(ability.id, talent.id); }}><span aria-hidden="true">{talent.glyph ?? ['◆', '✦', '✺'][talentIndex]}</span>{#if chosen}<span class="talent-check" aria-hidden="true">✓</span>{/if}</button>
+            <button type="button" class="talent-orb" class:selected={chosen} aria-disabled={disabled || !picked} aria-pressed={chosen} aria-label={`${talent.name}, ${ability.name} talent${!picked ? ', select this ability first' : ''}`} aria-describedby={`${idPrefix}-detail`} data-talent-option={talent.id} use:abilityTooltip={{detail: talentDetails[`${ability.id}:${talent.id}`], preview: !chosen, disabled: !tooltipsEnabled, revision: loadout}} onfocus={() => inspect(ability.id, talent.id)} onpointerenter={() => inspect(ability.id, talent.id)} onclick={() => { inspect(ability.id, talent.id); toggleTalent(ability.id, talent.id); }}><span aria-hidden="true">{talent.glyph ?? ['◆', '✦', '✺'][talentIndex]}</span>{#if chosen}<span class="talent-check" aria-hidden="true">✓</span>{/if}</button>
           {/each}
         </div>
       </div>
     {/each}
   </div>
-  <div class="loadout-inspector" id={`${idPrefix}-detail`} aria-live="polite" aria-atomic="true">
-    {#if currentDetail}<p class="eyebrow">{currentDetail.type}</p><h4>{currentDetail.name}</h4><p>{currentDetail.detail}</p>
-    {:else}<h4>Explore the orbs</h4><p>Hover or focus an ability or talent for details. Select a glowing talent again to remove it. Reorder slots with the arrow buttons.</p>{/if}
+  <div class="loadout-inspector" id={`${idPrefix}-detail`}>
+    {#if currentDetail}<AbilityDetails detail={currentDetail} preview={Boolean(inspected?.talentId && talents[inspected.abilityId] !== inspected.talentId)} />
+    {:else}<h4>Explore the orbs</h4><p>Hover, focus, or tap an ability or talent for details. Select a glowing talent again to remove it. Reorder slots with the arrow buttons.</p>{/if}
   </div>
   {#each warnings as warning (warning)}<p class="loadout-warning" role="status">{warning}</p>{/each}
   {#if selected.length === 0}<p class="loadout-warning" role="status">Choose at least one ability to start a session.</p>{/if}
-  <div class="loadout-footer"><span>Void resource is shared by spells. Stored spell charges are separate.</span><button type="button" class="quiet" disabled={disabled || spent === 0} onclick={() => onchange({ abilities: [...selected], talents: {} })}>Clear talents</button></div>
+  <div class="loadout-footer"><span>Loadout changes save automatically in this browser on this device.</span><button type="button" class="quiet" disabled={disabled || spent === 0} onclick={() => onchange({ abilities: [...selected], talents: {} })}>Clear talents</button></div>
 </section>

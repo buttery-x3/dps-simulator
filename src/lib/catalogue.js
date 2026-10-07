@@ -23,19 +23,20 @@ const dot = (id, name, duration, interval, amount, maintenance = false, carry = 
 const talent = (id, name, description, patch) => ({id, name, description, patch: {description, ...patch}});
 const base = (definition) => ({gcd: 1.2, cooldown: 0, charges: 1, targeting: {...single}, effects: [], triggers: [], talents: [], ...definition});
 
-export const SLOT_KEYS = freeze(['Q', 'E', 'R', '4', '5']);
+export const SLOT_KEYS = freeze(['1', '2', '3', '4', '5']);
+export const TALENT_BUDGET = 5;
 export const CATALOGUE = freeze({
   schemaVersion: 1,
   resource: {id: 'void', max: 3},
   abilities: [
     base({
       id: 'veil-bolt', name: 'Veil Bolt', short: 'Bolt', color: '#c4b5fd', icon: 'veil-bolt',
-      description: 'A repeatable 1.5s stationary cast dealing 640 damage.',
-      activation: activation('cast', 1.5, false), effects: [damage(640)],
+      description: 'A 1.5s stationary cast dealing 1,150 damage with a 6s cooldown.',
+      activation: activation('cast', 1.5, false), cooldown: 6, effects: [damage(1150)],
       talents: [
-        talent('v1', 'Heavy Veil', 'A 1.5s cast dealing 1,150 damage with a 6s cooldown.', {cooldown: 6, effects: [damage(1150)]}),
-        talent('v2', 'Lingering Touch', 'Deals 640 damage, then 180 every 3s for 18s. Refreshing carries up to 30% of the base DoT duration.', {effects: [damage(640), dot('lingering-touch', 'Lingering Touch', 18, 3, 180, true, 0.3)]}),
-        talent('v3', 'Charged Veil', 'The completed hit has a 20% chance to generate one void resource.', {triggers: [proc('hit', 0.2)]}),
+        talent('v1', 'Light Veil', 'A repeatable 1.5s stationary cast dealing 640 damage with no cooldown.', {cooldown: 0, effects: [damage(640)]}),
+        talent('v2', 'Lingering Touch', 'Deals 640 damage, then 180 every 3s for 18s. Keeps the 6s cooldown. Refreshing carries up to 30% of the base DoT duration.', {effects: [damage(640), dot('lingering-touch', 'Lingering Touch', 18, 3, 180, true, 0.3)]}),
+        talent('v3', 'Charged Veil', 'Keeps the 1,150-damage hit and 6s cooldown. The completed hit has a 20% chance to generate one Astral charge.', {triggers: [proc('hit', 0.2)]}),
       ],
     }),
     base({
@@ -43,8 +44,8 @@ export const CATALOGUE = freeze({
       description: 'Instantly applies a DoT: 240 every 3s for 18s. Refreshing carries up to 30% of its base duration; no damage on application.',
       activation: activation('instant'), effects: [dot('lingering-glimmer', 'Lingering Glimmer', 18, 3, 240, true, 0.3)],
       talents: [
-        talent('v1', 'Lingering Resource', 'Remains an instant DoT. Each periodic tick has a 2% chance to generate one void resource.', {triggers: [proc('periodicTick', 0.02)]}),
-        talent('v2', 'Astral Refresh', 'Casting this instant DoT has a 50% chance to reset Astral Flare, or restore exactly one stored charge.', {triggers: [proc('cast', 0.5, [{type: 'restoreCooldown', abilityId: 'astral-flare'}])]}),
+        talent('v1', 'Lingering Resource', 'Remains an instant DoT. Each periodic tick has a 2% chance to generate one Astral charge.', {triggers: [proc('periodicTick', 0.02)]}),
+        talent('v2', 'Astral Refresh', 'Casting this instant DoT has a 50% chance to reset Astral Flare, or restore exactly one stored spell charge.', {triggers: [proc('cast', 0.5, [{type: 'restoreCooldown', abilityId: 'astral-flare'}])]}),
         talent('v3', 'Linger Longer', 'The instant DoT lasts 36s with unchanged 240 damage per 3s tick. Refresh carry is capped at 30% of that base duration.', {effects: [dot('lingering-glimmer', 'Lingering Glimmer', 36, 3, 240, true, 0.3)]}),
       ],
     }),
@@ -54,7 +55,7 @@ export const CATALOGUE = freeze({
       activation: activation('channel', 3, false, 0.75), effects: [damage(180)],
       talents: [
         talent('v1', 'Gathering Gloam', 'Four ticks ramp from 180 to 225, 270, then 315 damage. Completing the channel rewards the full ramp.', {effects: [{type: 'damage', amount: 180, rampPerTick: 0.25}]}),
-        talent('v2', 'Full Conduit', 'Completing the entire channel guarantees one void resource. Clipped or interrupted channels generate none.', {triggers: [proc('complete', 1)]}),
+        talent('v2', 'Full Conduit', 'Completing the entire channel guarantees one Astral charge. Clipped or interrupted channels generate none.', {triggers: [proc('complete', 1)]}),
         talent('v3', 'Twin Threads', 'Each channel tick also hits the nearest enemy within 260 of the primary target for 50% damage.', {targeting: {kind: 'chain', additional: 1, jumpRange: 260, secondaryMultiplier: 0.5}}),
       ],
     }),
@@ -63,19 +64,19 @@ export const CATALOGUE = freeze({
       description: 'An instant 900-damage hit with an 8s cooldown. Usable while moving.',
       activation: activation('instant'), cooldown: 8, effects: [damage(900)],
       talents: [
-        talent('v1', 'Astral Builder', 'Each completed hit has a 50% chance to generate one void resource.', {triggers: [proc('hit', 0.5)]}),
+        talent('v1', 'Astral Builder', 'Each completed hit has a 50% chance to generate one Astral charge.', {triggers: [proc('hit', 0.5)]}),
         talent('v2', 'Drifting Flare', 'A repeatable 1s cast usable while moving, dealing 520 damage with no cooldown.', {activation: activation('cast', 1, true), cooldown: 0, effects: [damage(520)]}),
-        talent('v3', 'Stored Starlight', 'Stores three instant hits. Each spent charge recharges serially over 10s; charges do not expire.', {charges: 3, cooldown: 10}),
+        talent('v3', 'Stored Starlight', 'Stores three spell charges for instant hits. Each spent spell charge recharges serially over 10s; stored spell charges do not expire.', {charges: 3, cooldown: 10}),
       ],
     }),
     base({
       id: 'destructive-rift', name: 'Destructive Rift', short: 'Rift', color: '#e4cb8c', icon: 'destructive-rift',
-      description: 'A stationary 1.5s cast spending three void resources for 2,400 damage.',
+      description: 'A stationary 1.5s cast spending three Astral charges for 2,400 damage.',
       activation: activation('cast', 1.5, false), cost: {min: 3, amount: 3, spend: 'fixed'}, effects: [damage(2400)],
       talents: [
-        talent('v1', 'Devouring Rift', 'Instantly spends all current void resources (one to three). Applies only a 6s DoT, dealing 150 damage per consumed resource each second.', {activation: activation('instant'), cost: {min: 1, amount: 3, spend: 'all'}, effects: [{...dot('devouring-rift', 'Devouring Rift', 6, 1, 150), perResource: true}]}),
-        talent('v2', 'Chaos Rift', 'Requires three resources. One successful-resolution roll leaves zero, one, two, or three of the spent resources, each with a 25% chance.', {cost: {retainedOutcomes: [0, 1, 2, 3]}}),
-        talent('v3', 'Refreshing Rift', 'After its damage, resets every cooldown, fully restores stored charges, and refreshes every existing DoT on living targets without extra ticks.', {effects: [damage(2400), {type: 'resetCooldowns'}, {type: 'refreshDots'}]}),
+        talent('v1', 'Devouring Rift', 'Instantly spends all current Astral charges (one to three). Applies only a 6s DoT, dealing 150 damage per consumed Astral charge each second.', {activation: activation('instant'), cost: {min: 1, amount: 3, spend: 'all'}, effects: [{...dot('devouring-rift', 'Devouring Rift', 6, 1, 150), perResource: true}]}),
+        talent('v2', 'Chaos Rift', 'Requires three Astral charges. One successful-resolution roll leaves zero, one, two, or three of the spent Astral charges, each with a 25% chance.', {cost: {retainedOutcomes: [0, 1, 2, 3]}}),
+        talent('v3', 'Refreshing Rift', 'After its damage, resets every cooldown, fully restores stored spell charges, and refreshes every existing DoT on living targets without extra ticks.', {effects: [damage(2400), {type: 'resetCooldowns'}, {type: 'refreshDots'}]}),
       ],
     }),
     base({
@@ -86,7 +87,7 @@ export const CATALOGUE = freeze({
       talents: [
         talent('v1', 'Falling Night', 'A stationary 2s cast dealing 700 damage in the area and applying the normal 12s DoT. Keeps the 30s cooldown.', {activation: activation('cast', 2, false), effects: [damage(700), dot('area-pulse', 'Area Pulse', 12, 2, 180)]}),
         talent('v2', 'Gloam Storm', 'A stationary 4s area channel: eight 450-damage ticks, one every 0.5s. Replaces the lingering DoT and keeps the 30s cooldown.', {activation: activation('channel', 4, false, 0.5), effects: [damage(450)]}),
-        talent('v3', 'Compressed Pulses', 'Three stored instant hits for 650 damage each in a smaller 140-radius area. Each spent charge recharges serially over 10s.', {targeting: {radius: 140}, charges: 3, cooldown: 10, effects: [damage(650)]}),
+        talent('v3', 'Compressed Pulses', 'Three stored spell charges for instant 650-damage hits in a smaller 140-radius area. Each spent spell charge recharges serially over 10s.', {targeting: {radius: 140}, charges: 3, cooldown: 10, effects: [damage(650)]}),
       ],
     }),
     base({
@@ -94,9 +95,9 @@ export const CATALOGUE = freeze({
       description: 'A stationary 1.5s cast dealing 520 damage to its primary target and up to three additional enemies, chaining within 260 per jump.',
       activation: activation('cast', 1.5, false), targeting: {kind: 'chain', range: 700, additional: 3, jumpRange: 260, secondaryMultiplier: 1}, effects: [damage(520)],
       talents: [
-        talent('v1', 'Binding Chains', 'Links the primary target to bounced targets for 10s. Copies 10% of subsequent primary damage to each linked target, without recursive copies or resource procs.', {effects: [damage(520), {type: 'link', duration: 10, fraction: 0.1}]}),
+        talent('v1', 'Binding Chains', 'Links the primary target to bounced targets for 10s. Copies 10% of subsequent primary damage to each linked target, without recursive copies or Astral charge generation.', {effects: [damage(520), {type: 'link', duration: 10, fraction: 0.1}]}),
         talent('v2', 'Lingering Chains', 'Deals 240 damage per hit with a 10s cooldown and refreshes only existing Lingering Glimmer and Lingering Touch on the hit targets.', {cooldown: 10, effects: [damage(240), {type: 'refreshDots', ids: ['lingering-glimmer', 'lingering-touch']}]}),
-        talent('v3', 'Charged Chains', 'Each completed target hit independently has a 10% chance to generate one void resource.', {triggers: [proc('hit', 0.1)]}),
+        talent('v3', 'Charged Chains', 'Each completed target hit independently has a 10% chance to generate one Astral charge.', {triggers: [proc('hit', 0.1)]}),
       ],
     }),
     base({
@@ -107,7 +108,7 @@ export const CATALOGUE = freeze({
       talents: [
         talent('v1', 'Deeper Focus', 'The 15s self-buff reduces cast time and GCD by 20%. Keeps the 120s cooldown.', {effects: [{type: 'buff', id: 'focused-energy', duration: 15, modifiers: {castTime: 0.8, gcd: 0.8}}]}),
         talent('v2', 'Frequent Focus', 'The normal 15s, 10% cast/GCD self-buff is available every 60s.', {cooldown: 60}),
-        talent('v3', 'Abundant Focus', 'The normal 15s, 10% cast/GCD self-buff also doubles each successful resource gain, subject to the three-resource cap.', {effects: [{type: 'buff', id: 'focused-energy', duration: 15, modifiers: {castTime: 0.9, gcd: 0.9, resourceGain: 2}}]}),
+        talent('v3', 'Abundant Focus', 'The normal 15s, 10% cast/GCD self-buff also doubles each successful Astral charge gain, subject to the three-charge cap.', {effects: [{type: 'buff', id: 'focused-energy', duration: 15, modifiers: {castTime: 0.9, gcd: 0.9, resourceGain: 2}}]}),
       ],
     }),
   ],
@@ -358,7 +359,7 @@ function compiled(definition, talentId) {
   const kind = act.kind === 'instant' ? 'Instant' : `${act.duration}s ${act.kind}`;
   const parts = [kind];
   if (act.kind === 'cast' && act.moving) parts.push('mobile');
-  if (result.charges > 1) parts.push(`${result.charges} charges · ${result.cooldown}s recharge`);
+  if (result.charges > 1) parts.push(`${result.charges} stored spell charges · ${result.cooldown}s recharge`);
   else if (result.cooldown) parts.push(`${result.cooldown}s cooldown`);
   if (result.targeting.kind === 'self') parts.push('self-buff');
   else if (result.targeting.kind === 'area') parts.push('area');
@@ -378,14 +379,14 @@ export function compileAbility(id, talentId = null, catalogue = CATALOGUE) {
   return compiled(definition, talentId);
 }
 
-export function validateLoadout(loadout, catalogue = CATALOGUE) {
+function validateSelection(loadout, catalogue, minimumAbilities) {
   const check = validateCatalogue(catalogue);
   const errors = [...check.errors];
   const warnings = [];
   inspectData(loadout, errors, 'loadout');
   if (errors.length) return {valid: false, errors, warnings};
   if (!shape(loadout, ['abilities', 'talents'], ['abilities'], errors, 'loadout')) return {valid: false, errors, warnings};
-  if (!array(loadout.abilities, 1, SLOT_KEYS.length, errors, 'loadout.abilities')) return {valid: false, errors, warnings};
+  if (!array(loadout.abilities, minimumAbilities, SLOT_KEYS.length, errors, 'loadout.abilities')) return {valid: false, errors, warnings};
   if (new Set(loadout.abilities).size !== loadout.abilities.length) errors.push('loadout.abilities: each ability may be selected only once');
   const byId = new Map(catalogue.abilities.map(ability => [ability.id, ability]));
   for (const id of loadout.abilities) if (!byId.has(id)) errors.push(`loadout.abilities: unknown ability ${display(id)}`);
@@ -395,14 +396,25 @@ export function validateLoadout(loadout, catalogue = CATALOGUE) {
     if (!loadout.abilities.includes(id)) errors.push(`loadout.talents.${id}: talent belongs to an unselected ability`);
     if (talentId !== null && talentId !== 'base' && !byId.get(id)?.talents.some(talent => talent.id === talentId)) errors.push(`loadout.talents.${id}: unknown talent ${display(talentId)}`);
   }
+  if (plain(talents) && Object.values(talents).filter(id => id !== null && id !== 'base').length > TALENT_BUDGET) errors.push(`loadout.talents: choose at most ${TALENT_BUDGET} talents`);
   if (errors.length) return {valid: false, errors, warnings};
   const selection = loadout.abilities.map(id => compiled(byId.get(id), talents[id]));
   const hasGenerator = selection.some(ability => everyEffect(ability).some(effect => effect.type === 'resource'));
   const hasSpender = selection.some(ability => ability.cost);
-  if (hasSpender && !hasGenerator) warnings.push('This loadout has a resource spender but no resource generator; the spender cannot be used from the normal zero-resource start.');
-  if (hasGenerator && !hasSpender) warnings.push('This loadout generates resources but has no spender; gains at the resource cap will overflow.');
+  if (hasSpender && !hasGenerator) warnings.push('This loadout spends Astral charges but has no Astral charge generator; the spender cannot be used from the normal zero-charge start.');
+  if (hasGenerator && !hasSpender) warnings.push('This loadout generates Astral charges but has no spender; gains at the Astral charge cap will overflow.');
   for (const ability of selection) for (const effect of everyEffect(ability)) if (effect.type === 'restoreCooldown' && !loadout.abilities.includes(effect.abilityId)) warnings.push(`${ability.name} can restore ${effect.abilityId}, which is not selected.`);
   return {valid: true, errors: [], warnings: [...new Set(warnings)]};
+}
+
+/** Playable loadouts must have at least one ability. */
+export function validateLoadout(loadout, catalogue = CATALOGUE) {
+  return validateSelection(loadout, catalogue, 1);
+}
+
+/** Setup may be temporarily empty, but every other catalogue rule still applies. */
+export function validateLoadoutDraft(loadout, catalogue = CATALOGUE) {
+  return validateSelection(loadout, catalogue, 0);
 }
 
 export function compileLoadout(loadout, catalogue = CATALOGUE) {

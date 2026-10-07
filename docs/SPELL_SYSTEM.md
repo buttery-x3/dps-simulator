@@ -9,7 +9,7 @@ formats, not compatible revisions of the same format.
 The catalogue contains eight base abilities and three mutually exclusive talents
 per ability: 32 playable forms, not 32 simultaneous action-bar buttons. Select
 one to five unique abilities and zero or one talent for each. Selection order
-assigns Q, E, R, 4 and 5. Focused Energy occupies an ordinary selected slot; there
+assigns slots whose default keys are 1, 2, 3, 4 and 5. Users can customize those slot bindings in the Keybindings dialog. Focused Energy occupies an ordinary selected slot; there
 is no sixth utility button and no legacy Wraithbolt proc ability.
 
 All numbers introduced to turn prose into playable definitions are provisional
@@ -17,21 +17,40 @@ practice tuning, not a balance claim. The current arena remains the practice
 encounter. Tutorial encounters, an encounter builder, Workshop import/export and
 publishing are future work.
 
+## Astral identity and compatibility names
+
+A Veilweaver expands their mind to understand reality, weaving the veil’s astral
+threads into the world to manipulate it and deal damage. The shared resource is
+called **Astral charges** throughout play. It starts at zero and is capped at
+three in the shipped catalogue. **Stored spell charges** are independent pools
+of ability uses, recharged by that ability’s cooldown rather than generated or
+spent as Astral charges.
+
+The runtime identifiers are deliberately unchanged: `catalogue.resource.id`
+remains `void`; `RaidSim.shards` is a compatibility alias for the current Astral
+charge count, and `wastedShards` counts Astral charges lost to overcap. Generic
+schema keys such as `resource`, `resourceGain`, `perResource` and `charges`,
+resource events, and snapshot field names keep their v1 contracts. The
+`charges` definition field and `spellCharges`/`storedCharges` state refer only
+to stored spell charges. This wording pass changes no values, timing or rules.
+
 ## Architecture and public API
 
 - `src/lib/catalogue.js`: immutable catalogue data, validation and pure compiler.
 - `src/lib/effect-handlers.js`: a bounded registry of reusable effect handlers.
 - `src/lib/engine.js`: deterministic clock, actions, resource/cooldown state,
   targets, periodic effects and encounter orchestration.
-- `src/lib/hud.js` and the UI consume the selected compiled spells, rather than
-  maintaining a second list of spell rules.
+- `src/lib/hud.js`, `src/lib/ability-details.js` and the UI consume the selected
+  compiled spells, rather than maintaining a second list of spell rules. The
+  generic detail model derives tooltip/Help values from those definitions and
+  has no duplicated per-spell mechanics table.
 
 Exports from `catalogue.js`:
 
 ```js
 CATALOGUE = {schemaVersion: 1, resource: {id: 'void', max: 3}, abilities: [...]}
 ABILITIES = CATALOGUE.abilities
-SLOT_KEYS = ['Q', 'E', 'R', '4', '5']
+SLOT_KEYS = ['1', '2', '3', '4', '5']
 DEFAULT_LOADOUT = {
   abilities: ['veil-bolt', 'lingering-glimmer', 'gloam-thread', 'astral-flare', 'area-pulse'],
   talents: {}
@@ -47,13 +66,13 @@ ability ID and metadata, and adds `detail` (the compiled description), a readabl
 `type`, `talentId` and `talentName`. Base `talentId` is null and `talentName` is
 `Base`. Omission, null or the string `base` selects the base. An empty string or
 unknown talent is rejected. `compileLoadout` additionally assigns `key` and
-zero-based `index`. Compiling never mutates the catalogue. Invalid definitions or
+zero-based `index`. These compiler keys are defaults. `RaidSim.configureKeybindings(codes)` validates five unique physical key codes and overlays runtime `key`/`keyCode` by slot without changing definitions or combat state. Call it before play or while paused, never while running. Preferences use the shared pure `src/lib/keybindings.js` API; browser persistence belongs to the UI. `snapshot()` reports current codes and labels; stopped summary metrics preserve the mapping at Stop. Compiling never mutates the catalogue. Invalid definitions or
 loadouts throw; validation reports readable paths and does not execute data.
 
-The engine accepts `new RaidSim({catalogue, loadout, seed, mechanics, layout})`.
+The engine accepts `new RaidSim({catalogue, loadout, seed, mechanics, layout, keybindings})`.
 The UI can prepare a loadout before starting; an active or paused session must be
 stopped before its selection changes. Configurations with a spender but no
-resource generator, a generator but no spender, or an Astral restoration talent
+Astral charge generator, a generator but no spender, or an Astral restoration talent
 without Astral Flare produce warnings rather than adding hidden abilities or
 blocking otherwise valid selections.
 
@@ -85,10 +104,10 @@ talents: [{id, name, description, patch}]
   stable target-ID tiebreaker. `secondaryMultiplier` optionally scales all
   non-primary hits for area/chain targeting. Self-targeting needs no enemy.
 - `gcd` is positive. `cooldown` may be zero. `charges: 1` means a normal cooldown,
-  not a separately stored resource; values greater than 1 mean stored charges
+  not an Astral charge pool; values greater than 1 mean stored spell charges
   and require a positive recharge cooldown.
 - `cost.spend: fixed` requires `min === amount`. `all` requires `amount` equal to
-  the resource maximum and spends the current amount after its `min` gate.
+  the Astral charge maximum and spends the current amount after its `min` gate.
   Optional `retainedOutcomes` is a list of distinct integers for fixed costs;
   successful resolution makes one equal-probability choice from the list.
 - `icon` is a semantic icon ID, normally the same ID as the built-in ability.
@@ -114,14 +133,14 @@ extend the schema deliberately rather than relying on implicit field removal.
 
 | Effect | Fields | Meaning |
 | --- | --- | --- |
-| `damage` | `amount`, `perResource?`, `rampPerTick?` | Direct damage to each selected victim. Resource scaling uses this action's spent amount; channel ramp is `base × (1 + rampPerTick × (tickIndex - 1))`. |
+| `damage` | `amount`, `perResource?`, `rampPerTick?` | Direct damage to each selected victim. Astral charge scaling uses this action's spent amount; channel ramp is `base × (1 + rampPerTick × (tickIndex - 1))`. |
 | `dot` | `id`, `name`, `duration`, `interval`, `amount`, `carry`, `maintenance`, `perResource?` | An independent target DoT; no application hit unless a separate damage effect exists. |
 | `buff` | `id`, `duration`, `modifiers` | Self-buff. Recognised multipliers are `castTime`, `gcd`, `resourceGain`. Reapplying the same buff ID replaces it. |
-| `link` | `duration`, `fraction` | Links a chain's primary to its bounced victims. Copies that fraction of later primary damage without recursive link copies or resource triggers. |
+| `link` | `duration`, `fraction` | Links a chain's primary to its bounced victims. Copies that fraction of later primary damage without recursive link copies or Astral charge triggers. |
 | `refreshDots` | `ids?` | With IDs, refreshes only matching existing DoTs on hit targets. With no IDs, refreshes every existing DoT on all living targets. Never creates a missing DoT. |
-| `resetCooldowns` | none | Resets all selected cooldowns and fully restores every stored-charge pool. |
-| `restoreCooldown` | `abilityId` | Resets a normal cooldown, or restores **one** stored charge. Unselected referenced abilities are a harmless no-op with a loadout warning. |
-| `resource` | positive integer `amount` | Generates shared resource once per effect context, multiplied by current gain buffs and capped at maximum. |
+| `resetCooldowns` | none | Resets all selected cooldowns and fully restores every stored-spell-charge pool. |
+| `restoreCooldown` | `abilityId` | Resets a normal cooldown, or restores **one** stored spell charge. Unselected referenced abilities are a harmless no-op with a loadout warning. |
+| `resource` | positive integer `amount` | Generates shared Astral charges once per effect context, multiplied by current gain buffs and capped at maximum. |
 
 Arrays retain their authored execution order. Damage/DoT effects apply per
 victim. Buff, cooldown, refresh and resource operations are executed once per
@@ -146,28 +165,28 @@ scripts, callbacks, formulas, imports or user-defined trigger names.
   when clipped or interrupted. Thread's fourth tick coincides with full
   completion; its guaranteed builder trigger fires exactly once at that point, even if the final
   tick kills the primary target.
-- Shared resource costs are reserved on accepted activation. Ordinary interrupted
+- Astral charge costs are reserved on accepted activation. Ordinary interrupted
   casts or cast target loss refund the reservation to the cap; overflow is reported.
   Channels commit their cost at activation and do not refund it on interruption.
   Chaos retention is rolled only on successful resolution, never on an
-  interrupted cast. Refunds and retained resources are not builder gains.
+  interrupted cast. Refunds and retained Astral charges are not builder gains.
 - Normal cast cooldowns start on successful resolution. Instant and channel
   cooldowns start at activation; interrupting a channel does not undo its committed
-  cooldown because it may already have delivered damage. Stored charges are spent at activation and recharge serially,
-  one full cooldown per missing charge. They never expire like the removed
-  proc charges. Single-charge restoration leaves any running serial recharge
+  cooldown because it may already have delivered damage. Stored spell charges are spent at activation and recharge serially,
+  one full cooldown per missing stored spell charge. They never expire like the removed
+  proc charges. Single-stored-charge restoration leaves any running serial recharge
   in place unless it fills the pool; full restoration ends the recharge timer.
 - Focused Energy's 0.9 or 0.8 multipliers apply only to casts and GCDs. They do
   not alter channel duration, channel tick intervals, independent DoT intervals
-  or recharge rates. Resource-gain buffs are evaluated when a gain occurs.
+  or recharge rates. Astral-charge-gain buffs are evaluated when a gain occurs.
 - Normal Glimmer/Touch reapplication preserves the next tick time and carries
   at most 30% of the new base duration. Linger Longer therefore has a 10.8s
   carry ceiling. There is no immediate damage or periodic trigger on refresh.
 - A `refreshDots` effect sets expiration to now plus the stored base duration,
-  preserves damage/resource scaling and the next scheduled tick, and adds no
+  preserves damage/Astral-charge scaling and the next scheduled tick, and adds no
   carry. Dead/expired targets and missing/expired DoTs are not resurrected.
 - A stored link copies actual damage dealt after overkill is removed. Copied
-  damage cannot recurse through links or trigger resource rolls. Links expire
+  damage cannot recurse through links or trigger Astral charge rolls. Links expire
   after 10s in the shipped talent and are removed with their targets.
 - Seeded randomness and identical inputs produce identical outcomes. No timing,
   success rolls or metrics depend on wall-clock frame size.
@@ -175,21 +194,30 @@ scripts, callbacks, formulas, imports or user-defined trigger names.
 ## Shipped catalogue and provisional tuning
 
 All abilities have a base 1.2s GCD and 700 target range except the self-buff's
-unused range of zero. The resource maximum is three; sessions start at zero.
-Every ability has `v1`, `v2`, `v3`, with the unchanged base selected by default.
+unused range of zero. The Astral charge maximum is three; sessions start at zero.
+Every ability has `v1`, `v2`, `v3`, with no talent selected by default.
 Numbers in this table are deliberately explicit so future balancing is a data
 change rather than an engine branch.
 
 | Ability | Base | v1 | v2 | v3 |
 | --- | --- | --- | --- | --- |
-| Veil Bolt | Stationary 1.5s cast, 640 damage, no cooldown | Heavy Veil: 1,150 damage, 6s cooldown | Lingering Touch: base hit plus 180/3s for 18s, maintenance DoT with 30% carry | Charged Veil: 20% resource chance on completed hit |
-| Lingering Glimmer | Instant DoT, 240/3s for 18s, 30% carry, maintenance | Lingering Resource: same instant DoT, 2% resource chance per periodic tick | Astral Refresh: same instant DoT, 50% **on cast** to reset Flare or restore one charge | Linger Longer: 36s duration, same tick damage/rate |
-| Gloam Thread | Stationary 3s channel, four 180 ticks at 0.75s | Gathering Gloam: 180/225/270/315 ticks | Full Conduit: guaranteed one resource only on full completion | Twin Threads: primary plus nearest one within 260, secondary takes 50% |
-| Astral Flare | Instant 900 hit, 8s cooldown | Astral Builder: 50% resource chance per hit | Drifting Flare: moving 1s cast, 520 damage, no cooldown | Stored Starlight: three stored hits, 10s serial recharge |
-| Destructive Rift | Stationary 1.5s cast, 2,400 damage, spends three | Devouring Rift: instant **DoT only**, consumes current one–three; 150/resource/s for 6s | Chaos Rift: one roll retains 0/1/2/3, each 25% | Refreshing Rift: base hit, reset all cooldowns/full charges, refresh all existing DoTs on living targets |
-| Area Pulse | Instant area DoT, radius 220, 180/2s for 12s, 30s cooldown | Falling Night: stationary 2s cast, 700 direct plus normal DoT | Gloam Storm: stationary 4s area channel, eight 450 ticks at 0.5s, no lingering field, 30s cooldown | Compressed Pulses: instant 650 direct, radius 140, three charges, 10s serial recharge |
-| Chain Strike | Stationary 1.5s cast, 520 to primary plus up to three, 260 jump range | Binding Chains: links bounced victims for 10s, copies 10% primary damage | Lingering Chains: 240 per target, 10s cooldown, refreshes only existing Glimmer/Touch on hit targets | Charged Chains: independent 10% resource chance per hit target |
-| Focused Energy | Instant self-buff, 15s, 10% shorter cast/GCD, 120s cooldown | Deeper Focus: 20% shorter cast/GCD | Frequent Focus: 60s cooldown | Abundant Focus: normal timing buff plus double resource gains |
+| Veil Bolt | Stationary 1.5s cast, 1,150 damage, 6s cooldown | Light Veil: stationary 1.5s cast, 640 damage, no cooldown | Lingering Touch: 640 direct plus 180/3s for 18s, 6s cooldown, maintenance DoT with 30% carry | Charged Veil: 1,150 damage, 6s cooldown, 20% chance for one Astral charge on completed hit |
+| Lingering Glimmer | Instant DoT, 240/3s for 18s, 30% carry, maintenance | Lingering Resource: same instant DoT, 2% chance for one Astral charge per periodic tick | Astral Refresh: same instant DoT, 50% **on cast** to reset Flare or restore one stored spell charge | Linger Longer: 36s duration, same tick damage/rate |
+| Gloam Thread | Stationary 3s channel, four 180 ticks at 0.75s | Gathering Gloam: 180/225/270/315 ticks | Full Conduit: guaranteed one Astral charge only on full completion | Twin Threads: primary plus nearest one within 260, secondary takes 50% |
+| Astral Flare | Instant 900 hit, 8s cooldown | Astral Builder: 50% chance for one Astral charge per hit | Drifting Flare: moving 1s cast, 520 damage, no cooldown | Stored Starlight: three stored spell charges, 10s serial recharge |
+| Destructive Rift | Stationary 1.5s cast, 2,400 damage, spends three Astral charges | Devouring Rift: instant **DoT only**, consumes current one–three Astral charges; 150 damage per consumed Astral charge/s for 6s | Chaos Rift: one roll retains 0/1/2/3 Astral charges, each 25% | Refreshing Rift: base hit, reset all cooldowns/full stored spell charges, refresh all existing DoTs on living targets |
+| Area Pulse | Instant area DoT, radius 220, 180/2s for 12s, 30s cooldown | Falling Night: stationary 2s cast, 700 direct plus normal DoT | Gloam Storm: stationary 4s area channel, eight 450 ticks at 0.5s, no lingering field, 30s cooldown | Compressed Pulses: instant 650 direct, radius 140, three stored spell charges, 10s serial recharge |
+| Chain Strike | Stationary 1.5s cast, 520 to primary plus up to three, 260 jump range | Binding Chains: links bounced victims for 10s, copies 10% primary damage | Lingering Chains: 240 per target, 10s cooldown, refreshes only existing Glimmer/Touch on hit targets | Charged Chains: independent 10% chance for one Astral charge per hit target |
+| Focused Energy | Instant self-buff, 15s, 10% shorter cast/GCD, 120s cooldown | Deeper Focus: 20% shorter cast/GCD | Frequent Focus: 60s cooldown | Abundant Focus: normal timing buff plus double Astral charge gains |
+
+Veil Bolt's default uses the former Heavy Veil tuning. The first talent retains
+its `v1` ID and is now Light Veil, restoring the former repeatable base tuning.
+Lingering Touch inherits the new cooldown but preserves its explicit 640-damage
+hit and 1,080 total DoT damage; Charged Veil inherits both the 1,150-damage hit
+and cooldown. Normal cast cooldowns begin on completion, so the unbuffed base,
+Lingering Touch and Charged Veil can start a cast every 7.5s at fastest; Light
+Veil remains repeatable every 1.5s. These timings do not account for resets,
+interruptions or other actions in the rotation.
 
 The design draft's old IDs map as follows: `basic-cast` → `veil-bolt`,
 `lingering-mark` → `lingering-glimmer`, `sustained-beam` → `gloam-thread`,
@@ -237,7 +265,7 @@ limits, not claims about a balanced character build:
 - Durations/GCD/intervals are at least 1/60s and at most 3,600s; zero is allowed
   for instant duration and no cooldown. Channels have at most 4,096 ticks.
   Range/radius/jump range are bounded at 10,000 world units; chains have at most
-  32 additional targets. Stored charges are integers from 1 to 10. Resource max
+  32 additional targets. Stored spell charges are integers from 1 to 10. Resource max
   is an integer from 1 to 100. Damage amount is bounded at 1,000,000 per effect;
   channel ramp coefficients at 100. Fractions and probabilities are 0–1.
 - Buff modifiers are finite and strictly positive, without an arbitrary balance
@@ -248,7 +276,7 @@ limits, not claims about a balanced character build:
   effective timing rather than silently making a zero-GCD action. Combined
   resource-gain modifiers and resource-effect gains must also remain finite.
 - A DoT interval cannot exceed duration. Costs must be feasible within the cap.
-  Stored charges require a nonzero recharge. Cooldown and DoT references must
+  Stored spell charges require a nonzero recharge. Cooldown and DoT references must
   resolve somewhere in the catalogue, including talent-defined DoTs.
 - Unknown keys/types, missing fields, NaN/Infinity, functions, accessors, hidden
   or symbolic fields, custom prototypes, inherited data, pollution keys

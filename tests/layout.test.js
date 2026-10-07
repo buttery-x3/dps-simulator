@@ -93,21 +93,21 @@ describe('arena resizing and letterboxed pointer mapping', () => {
 });
 
 describe('loadout layout and interaction styling contracts', () => {
-  test('keeps Customize with the left heading and allows the count to wrap on narrow screens', () => {
+  test('keeps title, count and Customize left aligned with whole groups wrapping', () => {
     const rulesFor = (rules, selector) => rules.filter(rule => rule.selectorText === selector).at(-1)?.style;
     const baseRules = [...sheet.cssRules];
     const heading = rulesFor(baseRules, '.preplay-setup .setup-heading');
-    expect(heading.display).toBe('inline-flex');
-    expect(heading.gap).toBe('12px');
-    expect(heading.flexShrink).toBe('0');
+    expect(heading.display).toBe('flex');
+    expect(heading.justifyContent).toBe('flex-start');
+    expect(heading.flexWrap).toBe('wrap');
+    expect(heading.minWidth).toBe('0');
     expect(rulesFor(baseRules, '.preplay-setup .setup-action').marginLeft).toBe('');
     expect(rulesFor(baseRules, '.preplay-setup .setup-action').whiteSpace).toBe('nowrap');
-    expect(rulesFor(baseRules, '.preplay-setup .setup-count').marginLeft).toBe('auto');
+    expect(rulesFor(baseRules, '.preplay-setup .setup-count').marginLeft).toBe('');
+    expect(rulesFor(baseRules, '.preplay-setup .setup-count').whiteSpace).toBe('nowrap');
     const narrowRules = baseRules.filter(rule => rule.conditionText === '(max-width:650px)').flatMap(rule => [...rule.cssRules]);
     expect(rulesFor(narrowRules, '.preplay-setup>summary').flexWrap).toBe('wrap');
     expect(rulesFor(narrowRules, '.preplay-setup .setup-count').marginLeft).toBe('0px');
-    expect(rulesFor(baseRules, '.preplay-setup .setup-action::after').content).toBe("' +'");
-    expect(rulesFor(baseRules, '.preplay-setup[open] .setup-action::after').content).toBe("' −'");
     expect(styles).toContain('summary:focus-visible');
   });
   test('removes orphaned standalone void styles and preserves active effect styling', () => {
