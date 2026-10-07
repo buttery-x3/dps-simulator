@@ -1,15 +1,17 @@
 <script>
   import {onMount, tick} from 'svelte';
-  import {RaidSim, SPELLS} from './lib/engine.js';
+  import {RaidSim} from './lib/engine.js';
+  import {ABILITIES, DEFAULT_LOADOUT, SLOT_KEYS, validateLoadout, compileAbility} from './lib/catalogue.js';
   import {ArenaRenderer} from './lib/renderer.js';
   import {buildHud, num, duration} from './lib/hud.js';
   import {registerTrainingTools} from './lib/browser-tools.js';
   import SpellIcon from './components/SpellIcon.svelte';
+  import LoadoutPicker from './components/LoadoutPicker.svelte';
   import HelpDialog from './components/HelpDialog.svelte';
   import SummaryDialog from './components/SummaryDialog.svelte';
 
   export const sim = new RaidSim();
-  const KEYBINDS = {KeyQ: 'brand', KeyE: 'glass', KeyR: 'thread', Digit4: 'bolt', Numpad4: 'bolt', Digit5: 'spend', Numpad5: 'spend'};
+  const KEY_SLOTS = {KeyQ: 0, KeyE: 1, KeyR: 2, Digit4: 3, Numpad4: 3, Digit5: 4, Numpad5: 4};
   const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
   const held = new Set();
   const timers = new Set();
@@ -20,7 +22,11 @@
   let disposed = false;
   let unregisterTools = () => {};
   let view = $state.raw(buildHud(sim));
-  let settings = $state({seed: 72821, loadout: 'rift', mechanics: true});
+  let settings = $state({seed: 72821, loadout: {abilities: [...DEFAULT_LOADOUT.abilities], talents: {...DEFAULT_LOADOUT.talents}}, mechanics: true, layout: 'spread'});
+  let loadoutOpen = $state(false);
+  const loadoutValidation = $derived(validateLoadout(settings.loadout));
+  const catalogue = $derived(ABILITIES.map(ability => compileAbility(ability.id, settings.loadout.talents[ability.id])));
+  const talentPoints = $derived(5 - Object.values(settings.loadout.talents).filter(Boolean).length);
   let helpOpen = $state(false);
   let summaryOpen = $state(false);
   let summary = $state.raw(null);
@@ -32,12 +38,9 @@
   const stateLabel = $derived({ready: 'READY TO TRAIN', running: 'SESSION ACTIVE', paused: 'SESSION PAUSED', stopped: 'SESSION COMPLETE'}[view.phase]);
   const detail = $derived.by(() => {
     if (!selectedSpell) return null;
-    if (selectedSpell === 'spend' && settings.loadout === 'bloom') return {
-      type: 'INSTANT · 3 VOID SHARDS', name: 'Umbral Bloom',
-      text: '1,200 to your target and 900 to other targets within 220 units. Target the middle of a cluster.',
-    };
-    const spell = SPELLS.find(spell => spell.id === selectedSpell);
-    return spell ? {type: spell.type.toUpperCase(), name: spell.name, text: spell.detail} : null;
+    const ability = ABILITIES.find(ability => ability.id === selectedSpell);
+    const spell = ability ? compileAbility(ability.id, settings.loadout.talents[ability.id]) : null;
+    return spell ? {type: (spell.type ?? 'ABILITY').toUpperCase(), name: spell.name, text: spell.detail} : null;
   });
 
   export function renderHud() { view = buildHud(sim); }
@@ -58,13 +61,16 @@
     renderHud();
   }
   function visibleAndFocused() { return !document.hidden && (!document.hasFocus || document.hasFocus()); }
-  function readSettings() { return {seed: Number(settings.seed) || 72821, loadout: settings.loadout, mechanics: settings.mechanics}; }
+  function readSettings() { return {seed: Number(settings.seed) || 72821, loadout: {abilities: [...settings.loadout.abilities], talents: {...settings.loadout.talents}}, mechanics: settings.mechanics, layout: settings.layout}; }
 
   export function startSession() {
+    if (['running', 'paused'].includes(sim.phase)) return {ok: false, reason: 'Stop the active session first'};
     if (!visibleAndFocused()) return {ok: false, reason: 'Bring the game into view and focus it first'};
+    if (!loadoutValidation.valid) return {ok: false, reason: loadoutValidation.errors.join(' ')};
     const current = readSettings();
     sim.seed = current.seed >>> 0 || 1;
-    sim.loadout = current.loadout;
+    sim.configureLoadout(current.loadout);
+    sim.layout = current.layout;
     sim.mechanics = current.mechanics;
     clearMovement();
     sim.start();
@@ -72,6 +78,7 @@
     lastFrame = performance.now();
     summaryOpen = false;
     helpOpen = false;
+    loadoutOpen = false;
     summary = null;
     used = {};
     renderHud();
@@ -114,16 +121,22 @@
   export function configure(next) {
     if (['running', 'paused'].includes(sim.phase)) throw new Error('Stop the active session before changing setup.');
     if (next.seed !== undefined && (!Number.isInteger(next.seed) || next.seed < 1 || next.seed > 4294967295)) throw new Error('Seed must be an integer from 1 to 4294967295.');
-    if (next.loadout !== undefined && !['rift', 'bloom'].includes(next.loadout)) throw new Error('Loadout must be rift or bloom.');
+    if (next.loadout !== undefined) {
+      const validation = validateLoadout(next.loadout);
+      if (!validation.valid) throw new Error(validation.errors.join(' '));
+    }
+    if (next.layout !== undefined && !['spread', 'clustered'].includes(next.layout)) throw new Error('Target layout must be spread or clustered.');
     if (next.mechanics !== undefined && typeof next.mechanics !== 'boolean') throw new Error('Mechanics must be a boolean.');
     updateSettings(next);
     return readSettings();
   }
   function updateSettings(next) {
     if (['running', 'paused'].includes(sim.phase)) return;
+    if (next.loadout !== undefined) next = {...next, loadout: {abilities: [...next.loadout.abilities], talents: Object.fromEntries(Object.entries(next.loadout.talents ?? {}).filter(([, talent]) => talent && talent !== 'base'))}};
     settings = {...settings, ...next};
     if (next.seed !== undefined) sim.seed = next.seed;
-    if (next.loadout !== undefined) { sim.loadout = next.loadout; selectedSpell = 'spend'; }
+    if (next.loadout !== undefined && validateLoadout(next.loadout).valid) sim.configureLoadout(next.loadout);
+    if (next.layout !== undefined) sim.layout = next.layout;
     if (next.mechanics !== undefined) sim.mechanics = next.mechanics;
     renderHud();
   }
@@ -145,7 +158,7 @@
       return;
     }
     if (event.code === 'Enter' && ['ready', 'stopped'].includes(sim.phase)) { event.preventDefault(); if (!event.repeat) startSession(); return; }
-    const id = KEYBINDS[event.code];
+    const id = sim.spells[KEY_SLOTS[event.code]]?.id;
     if (id) { event.preventDefault(); if (!event.repeat) castSpell(id); }
   }
   function keyUp(event) { if (MOVE_KEYS.includes(event.code)) { event.preventDefault(); held.delete(event.code); updateMovement(); } }
@@ -203,7 +216,7 @@
       <span id="stateLabel" class="state-label" class:active={view.phase === 'running'}>{stateLabel}</span>
       <button bind:this={pauseButton} id="pauseBtn" class="quiet" hidden={!active} onclick={() => view.phase === 'paused' ? resumeSession() : pauseSession()}>{view.phase === 'paused' ? 'Resume' : 'Pause'}</button>
       <button id="stopBtn" class="quiet" disabled={!active} onclick={stopSession}>Stop</button>
-      <button id="startBtn" class="primary" hidden={active} onclick={() => view.phase === 'stopped' ? showSummary() : startSession()}>{view.phase === 'stopped' ? 'Session summary' : 'Start session'}</button>
+      <button id="startBtn" class="primary" hidden={active} disabled={view.phase !== 'stopped' && !loadoutValidation.valid} onclick={() => view.phase === 'stopped' ? showSummary() : startSession()}>{view.phase === 'stopped' ? 'Session summary' : 'Start session'}</button>
     </div>
   </header>
   <section class="metrics" aria-label="Session metrics">
@@ -214,6 +227,10 @@
     <div class="metric damage"><span>Damage taken</span><strong id="damageTaken">{num(view.metrics.damageTaken)}</strong></div>
   </section>
 
+  <details class="preplay-setup" hidden={active} bind:open={loadoutOpen}>
+    <summary><span class="setup-heading"><span class="setup-title">Your loadout</span><span class="setup-action">Customize</span></span><span class="setup-count">{settings.loadout.abilities.length}/5 abilities · {talentPoints} talent point{talentPoints === 1 ? '' : 's'} available</span></summary>
+    {#if loadoutOpen}<LoadoutPicker abilities={catalogue} loadout={settings.loadout} keys={SLOT_KEYS} warnings={loadoutValidation.warnings} idPrefix="preplay-loadout" onchange={loadout => updateSettings({loadout})} />{/if}
+  </details>
   <div class="workspace">
     <section bind:this={combatPanel} class="combat-panel" aria-label="Combat arena">
       <div id="arenaWrap" class="arena-wrap">
@@ -221,8 +238,8 @@
         <div id="overlay" class="arena-overlay" hidden={view.phase === 'running'}><div class="overlay-card">
           <p class="eyebrow" id="overlayEyebrow">{view.phase === 'paused' ? 'CLOCK STOPPED' : view.phase === 'stopped' ? 'SESSION COMPLETE' : 'THE CHAMBER IS YOURS'}</p>
           <h2 id="overlayTitle">{view.phase === 'paused' ? 'Take your time.' : view.phase === 'stopped' ? `${num(view.metrics.sessionDps)} DPS` : "Stand still. Until you can't."}</h2>
-          <p id="overlayBody">{#if view.phase === 'paused'}{view.pauseReason || 'Your session is paused.'}{:else if view.phase === 'stopped'}{num(view.metrics.totalDamage)} damage across {duration(view.metrics.elapsed)} of active time.{:else}Keep Sorrowbrand on every target.<br />Channel in the gaps. Dodge amber ground marks.{/if}</p>
-          <button id="overlayAction" class="primary" onclick={() => view.phase === 'paused' ? resumeSession() : view.phase === 'stopped' ? showSummary() : startSession()}>{view.phase === 'paused' ? 'Resume session' : view.phase === 'stopped' ? 'View session summary' : 'Start session'}</button>
+          <p id="overlayBody">{#if view.phase === 'paused'}{view.pauseReason || 'Your session is paused.'}{:else if view.phase === 'stopped'}{num(view.metrics.totalDamage)} damage across {duration(view.metrics.elapsed)} of active time.{:else}Pick your rhythm. Keep your DoTs rolling.<br />Cast in the gaps. Dodge red ground marks.{/if}</p>
+          <button id="overlayAction" class="primary" disabled={!active && view.phase !== 'stopped' && !loadoutValidation.valid} onclick={() => view.phase === 'paused' ? resumeSession() : view.phase === 'stopped' ? showSummary() : startSession()}>{view.phase === 'paused' ? 'Resume session' : view.phase === 'stopped' ? 'View session summary' : 'Start session'}</button>
           <p class="overlay-foot" id="overlayFoot">{view.phase === 'paused' ? 'Your target, cooldowns, and damage are preserved.' : view.phase === 'stopped' ? 'The result stays here until you start a new session.' : "An endless drill. Stop whenever you're ready."}</p>
         </div></div>
         <div class="arena-keyhint" id="focusHint" hidden={arenaFocused || view.phase !== 'running'}>Click the arena to take control</div>
@@ -232,14 +249,14 @@
         <div class="cast-track"><div id="castFill" style:transform={`scaleX(${view.cast.progress})`}></div><i class="channel-mark one"></i><i class="channel-mark two"></i><i class="channel-mark three"></i></div>
       </div>
       <div class="ability-deck" id="abilityDeck" aria-label="Spells">
-        {#each view.abilities as spell (spell.id)}
-          <button type="button" class="ability" class:is-locked={spell.state.locked} class:is-proc={spell.state.ready === 'proc'} class:is-ready={spell.state.ready === 'resource'} class:is-queued={spell.queued} class:is-used={used[spell.id]} style:--spell-color={spell.color} data-spell={spell.id} aria-label={`${spell.key}. ${spell.name}. ${spell.label}`} onpointerdown={event => event.preventDefault()} onclick={() => { castSpell(spell.id); focusArena(); }} onpointerenter={() => { selectedSpell = spell.id; }} onfocus={() => { selectedSpell = spell.id; }}>
-            <SpellIcon id={spell.icon} class="ability-icon" state={spell.state} />
+        {#each (active || loadoutValidation.valid ? view.abilities : []) as spell (spell.id)}
+          <button type="button" class="ability" class:is-locked={spell.state.locked} class:is-proc={spell.state.ready === 'charges'} class:is-ready={spell.state.ready === 'resource'} class:is-queued={spell.queued} class:is-used={used[spell.id]} style:--spell-color={spell.color} data-spell={spell.id} aria-label={`${spell.key}. ${spell.name}. ${spell.label}`} onpointerdown={event => event.preventDefault()} onclick={() => { castSpell(spell.id); focusArena(); }} onpointerenter={() => { selectedSpell = spell.id; }} onfocus={() => { selectedSpell = spell.id; }}>
+            <SpellIcon id={spell.icon} class="ability-icon" state={{...spell.state, key: spell.key}} />
             <span class="ability-name">{spell.name}</span><span class="ability-state">{spell.label}</span>
           </button>
         {/each}
       </div>
-      <div class="combat-status"><div class="shards" aria-label="Void shards"><span>VOID</span>{#each [0, 1, 2] as shard}<i class:filled={shard < view.shards}></i>{/each}</div></div>
+      <div class="combat-status"><div class="active-buffs" aria-label="Active spell effects">{#each view.buffs ?? [] as buff (buff.id)}<span>{buff.name} · {Math.ceil(buff.seconds)}s</span>{/each}</div></div>
       <div class="touch-controls" aria-label="Touch movement controls">
         <div class="dpad">{#each [{x: 0, y: -1, label: 'up', glyph: '↑'}, {x: -1, y: 0, label: 'left', glyph: '←'}, {x: 0, y: 1, label: 'down', glyph: '↓'}, {x: 1, y: 0, label: 'right', glyph: '→'}] as direction}<button data-move={`${direction.x},${direction.y}`} aria-label={`Move ${direction.label}`} onpointerdown={event => touchMove(event, direction.x, direction.y)} onpointerup={touchStop} onpointercancel={touchStop} onlostpointercapture={touchStop}>{direction.glyph}</button>{/each}</div>
         <button id="touchTarget" onclick={() => { cycleTarget(); focusArena(); }}>Next target</button>
@@ -255,10 +272,10 @@
           </button>
         {/each}
       </div></section>
-      <section class="compact-counters"><div><span>Echoes</span><strong id="killCount">{view.metrics.kills}</strong></div><div><span>Brand coverage</span><strong id="brandUptime">{Math.round(view.metrics.brandUptime * 100)}%</strong></div></section>
+      <section class="compact-counters"><div><span>Echoes</span><strong id="killCount">{view.metrics.kills}</strong></div><div><span>DoT coverage</span><strong id="brandUptime">{view.metrics.dotCoverage === null ? '—' : `${Math.round(view.metrics.dotCoverage * 100)}%`}</strong></div></section>
     </aside>
   </div>
 
-  <HelpDialog open={helpOpen} paused={view.phase === 'paused'} {active} {settings} onsettings={updateSettings} onclose={closeHelp} {detail} proc={view.proc} {metricsSection} />
-  <SummaryDialog open={summaryOpen} {summary} onclose={() => { summaryOpen = false; }} onrestart={startSession} />
+  <HelpDialog open={helpOpen} paused={view.phase === 'paused'} {active} {settings} onsettings={updateSettings} onclose={closeHelp} {detail} abilities={catalogue} warnings={loadoutValidation.warnings} {metricsSection} />
+  <SummaryDialog open={summaryOpen} {summary} canStart={loadoutValidation.valid} onclose={() => { summaryOpen = false; }} onrestart={startSession} />
 </main>

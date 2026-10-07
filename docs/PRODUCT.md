@@ -7,19 +7,23 @@ VEILWEAVER stays a browser game: open a link, load quickly, and start practicing
 ## Implemented today
 
 - A single endless practice arena with a permanent sentinel and timed stationary adds.
-- A ranged rotation built around a refreshable DoT, stationary cast and channel, instant procs, shards, and two alternative spenders.
+- Eight declarative abilities with three talents each, one-to-five ordered spell slots, and five optional talent points.
+- Shared casting, channeling, target selection, periodic effects, buffs, resources, stored charges, triggers and non-recursive damage links.
+- An orb-based loadout picker and clustered/spread stationary target layouts.
 - Telegraphs for circle and lane ground impacts, plus damage-taken feedback.
-- Session and rolling DPS, damage totals, target state, cooldowns, and proc/resource readiness cues.
+- Session and rolling DPS, damage totals, target state, cooldowns, stored charges and dynamic resource readiness cues.
+- Pooled maintenance-DoT coverage across every live target from its first tick, with no application grace period.
 - Seeded deterministic simulation, pause/resume/stop, a session summary, and focus/visibility safety.
 - Keyboard and pointer controls, basic touch controls, and in-game Help.
 - A Svelte 5 interface with a framework-independent combat simulation, built to static files with no account or persistent storage requirement.
 
 ## Planned direction — not implemented
 
-1. **Encounter designer:** author repeatable mechanic timelines and arena layouts.
-2. **Mechanic vocabulary:** add moving projectiles, rally/stack zones, and configurable AoE patterns. The current circle/lane telegraphs are a starting point, not a general authoring system.
-3. **User-created encounter links:** serialize, validate, and share encounters so another player can open a link and play the same challenge.
-4. **Leaderboards:** compare runs under clearly defined encounter and scoring rules.
+1. **Play/Create direction:** a possible shared app entry for practice and authoring; introductory encounters and tutorial progression remain future discussion.
+2. **Encounter designer:** author repeatable mechanic timelines and arena layouts.
+3. **Mechanic vocabulary:** add moving projectiles, rally/stack zones, and configurable AoE patterns. The current circle/lane telegraphs are a starting point, not a general authoring system.
+4. **User-created encounter links:** serialize, validate, and share encounters so another player can open a link and play the same challenge.
+5. **Leaderboards:** compare runs under clearly defined encounter and scoring rules.
 
 These items describe direction rather than delivery commitments. This repository does not yet contain an editor, custom encounter format, share-link system, online leaderboard, or service backend.
 
@@ -30,3 +34,7 @@ These items describe direction rather than delivery commitments. This repository
 - Decide whether encounter links can be self-contained or need hosted storage.
 - Define fair scoring and how to verify results before introducing competitive leaderboards. Current client-side session numbers are practice feedback, not tamper-proof competitive records.
 - Add accounts or backend services only if a chosen sharing or ranking design actually needs them. Preserve immediate browser play for the core practice loop.
+
+## Spell authoring contract
+
+The versioned catalogue and compiler are implemented now; see [SPELL_SYSTEM.md](SPELL_SYSTEM.md). They can be reused by a future editor. The earlier Workshop draft is not the canonical runtime schema. No editor, campaign or migration of the Workshop is included in this pass.

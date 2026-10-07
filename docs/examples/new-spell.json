@@ -1,0 +1,27 @@
+{
+  "id": "dusk-lance",
+  "name": "Dusk Lance",
+  "short": "Lance",
+  "color": "#a3bbff",
+  "icon": "veil-bolt",
+  "description": "A repeatable stationary 1.25s cast dealing 600 damage.",
+  "activation": {"kind": "cast", "duration": 1.25, "moving": false},
+  "targeting": {"kind": "single", "range": 700},
+  "gcd": 1.2,
+  "cooldown": 0,
+  "charges": 1,
+  "effects": [{"type": "damage", "amount": 600}],
+  "triggers": [],
+  "talents": [
+    {
+      "id": "drifting-lance",
+      "name": "Drifting Lance",
+      "description": "Can be cast while moving; damage is reduced to 500.",
+      "patch": {
+        "description": "A repeatable 1.25s cast usable while moving, dealing 500 damage.",
+        "activation": {"moving": true},
+        "effects": [{"type": "damage", "amount": 500}]
+      }
+    }
+  ]
+}
