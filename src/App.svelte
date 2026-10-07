@@ -239,7 +239,7 @@
           </button>
         {/each}
       </div>
-      <div class="combat-status"><span id="notice" class={view.notice.kind} role="status">{view.notice.text}</span><div class="shards" aria-label="Void shards"><span>VOID</span>{#each [0, 1, 2] as shard}<i class:filled={shard < view.shards}></i>{/each}</div></div>
+      <div class="combat-status"><div class="shards" aria-label="Void shards"><span>VOID</span>{#each [0, 1, 2] as shard}<i class:filled={shard < view.shards}></i>{/each}</div></div>
       <div class="touch-controls" aria-label="Touch movement controls">
         <div class="dpad">{#each [{x: 0, y: -1, label: 'up', glyph: '↑'}, {x: -1, y: 0, label: 'left', glyph: '←'}, {x: 0, y: 1, label: 'down', glyph: '↓'}, {x: 1, y: 0, label: 'right', glyph: '→'}] as direction}<button data-move={`${direction.x},${direction.y}`} aria-label={`Move ${direction.label}`} onpointerdown={event => touchMove(event, direction.x, direction.y)} onpointerup={touchStop} onpointercancel={touchStop} onlostpointercapture={touchStop}>{direction.glyph}</button>{/each}</div>
         <button id="touchTarget" onclick={() => { cycleTarget(); focusArena(); }}>Next target</button>
