@@ -9,7 +9,7 @@ formats, not compatible revisions of the same format.
 The catalogue contains eight base abilities and three mutually exclusive talents
 per ability: 32 playable forms, not 32 simultaneous action-bar buttons. Select
 one to five unique abilities and zero or one talent for each. Selection order
-assigns Q, E, R, 4 and 5. Focused Energy occupies an ordinary selected slot; there
+assigns slots whose default keys are 1, 2, 3, 4 and 5. Users can customize those slot bindings in the Keybindings dialog. Focused Energy occupies an ordinary selected slot; there
 is no sixth utility button and no legacy Wraithbolt proc ability.
 
 All numbers introduced to turn prose into playable definitions are provisional
@@ -31,7 +31,7 @@ Exports from `catalogue.js`:
 ```js
 CATALOGUE = {schemaVersion: 1, resource: {id: 'void', max: 3}, abilities: [...]}
 ABILITIES = CATALOGUE.abilities
-SLOT_KEYS = ['Q', 'E', 'R', '4', '5']
+SLOT_KEYS = ['1', '2', '3', '4', '5']
 DEFAULT_LOADOUT = {
   abilities: ['veil-bolt', 'lingering-glimmer', 'gloam-thread', 'astral-flare', 'area-pulse'],
   talents: {}
@@ -47,10 +47,10 @@ ability ID and metadata, and adds `detail` (the compiled description), a readabl
 `type`, `talentId` and `talentName`. Base `talentId` is null and `talentName` is
 `Base`. Omission, null or the string `base` selects the base. An empty string or
 unknown talent is rejected. `compileLoadout` additionally assigns `key` and
-zero-based `index`. Compiling never mutates the catalogue. Invalid definitions or
+zero-based `index`. These compiler keys are defaults. `RaidSim.configureKeybindings(codes)` validates five unique physical key codes and overlays runtime `key`/`keyCode` by slot without changing definitions or combat state. Call it before play or while paused, never while running. Preferences use the shared pure `src/lib/keybindings.js` API; browser persistence belongs to the UI. `snapshot()` reports current codes and labels; stopped summary metrics preserve the mapping at Stop. Compiling never mutates the catalogue. Invalid definitions or
 loadouts throw; validation reports readable paths and does not execute data.
 
-The engine accepts `new RaidSim({catalogue, loadout, seed, mechanics, layout})`.
+The engine accepts `new RaidSim({catalogue, loadout, seed, mechanics, layout, keybindings})`.
 The UI can prepare a loadout before starting; an active or paused session must be
 stopped before its selection changes. Configurations with a spender but no
 resource generator, a generator but no spender, or an Astral restoration talent

@@ -15,7 +15,7 @@ VEILWEAVER stays a browser game: open a link, load quickly, and start practicing
 - Pooled maintenance-DoT coverage across every live target from its first tick, with no application grace period.
 - Seeded deterministic simulation, pause/resume/stop, a session summary, and focus/visibility safety.
 - Keyboard and pointer controls, basic touch controls, and in-game Help.
-- A Svelte 5 interface with a framework-independent combat simulation, built to static files with no account or persistent storage requirement.
+- A Svelte 5 interface with a framework-independent combat simulation, built to static files with no account or persistent storage requirement. Optional spell keybindings are saved only in the current browser, with safe defaults if storage is unavailable.
 
 ## Planned direction — not implemented
 

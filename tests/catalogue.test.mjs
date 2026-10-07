@@ -118,7 +118,7 @@ test('Focus affects only cast/GCD timing and optional builder gains', () => {
 });
 
 test('loadout compiler maps chosen order onto only five action-bar keys', () => {
-  assert.deepEqual(SLOT_KEYS, ['Q', 'E', 'R', '4', '5']);
+  assert.deepEqual(SLOT_KEYS, ['1', '2', '3', '4', '5']);
   const result = compileLoadout(DEFAULT_LOADOUT);
   assert.equal(result.length, 5);
   result.forEach((ability, index) => {
@@ -296,7 +296,7 @@ test('new JSON spell and talent compile without engine edits', async () => {
   assert.equal(result[0].activation.duration, 1.25);
   assert.equal(result[0].activation.moving, true);
   assert.deepEqual(result[0].effects, [{type: 'damage', amount: 500}]);
-  assert.equal(result[0].key, 'Q');
+  assert.equal(result[0].key, '1');
   assert.equal(ABILITIES.length, 8);
   const {RaidSim} = await import('../src/lib/engine.js');
   const sim = new RaidSim({catalogue: extended, loadout: {abilities: ['dusk-lance'], talents: {'dusk-lance': 'drifting-lance'}}, mechanics: false});

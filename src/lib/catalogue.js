@@ -23,7 +23,7 @@ const dot = (id, name, duration, interval, amount, maintenance = false, carry = 
 const talent = (id, name, description, patch) => ({id, name, description, patch: {description, ...patch}});
 const base = (definition) => ({gcd: 1.2, cooldown: 0, charges: 1, targeting: {...single}, effects: [], triggers: [], talents: [], ...definition});
 
-export const SLOT_KEYS = freeze(['Q', 'E', 'R', '4', '5']);
+export const SLOT_KEYS = freeze(['1', '2', '3', '4', '5']);
 export const CATALOGUE = freeze({
   schemaVersion: 1,
   resource: {id: 'void', max: 3},

@@ -13,7 +13,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check": "svelte-check --tsconfig ./jsconfig.json",
-    "test:core": "node --test tests/engine.test.mjs tests/catalogue.test.mjs tests/readability.test.mjs",
+    "test:core": "node --test tests/engine.test.mjs tests/catalogue.test.mjs tests/readability.test.mjs tests/keybindings.test.mjs",
     "test:ui": "vitest run",
     "test": "npm run test:core && npm run test:ui",
     "verify": "npm run check && npm test && npm run build"

@@ -26,6 +26,17 @@ function label(c, value, x, y, size, color = '#fff') {
   c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = '#090d18'; c.strokeText(value, x, y);
   c.fillStyle = color; c.fillText(value, x, y);
 }
+function drawKeyLabel(c, value) {
+  // Keep the single-key badge unchanged. Longer names use the available top
+  // edge instead of extending left of the icon (including the 42px arena cue).
+  if (value.length === 1) { label(c, value, 13, 14, 15); return; }
+  c.font = '700 15px "Segoe UI", sans-serif';
+  const width = c.measureText(value).width;
+  const size = Math.min(15, 15 * 64 / Math.max(1, width));
+  c.font = `700 ${size}px "Segoe UI", sans-serif`;
+  const fittedWidth = c.measureText(value).width;
+  label(c, value, Math.max(13, 8 + fittedWidth / 2), 14, size);
+}
 
 export function spellReadiness(sim, id) {
   const spell = sim.spells?.find(value => value.id === id);
@@ -113,7 +124,7 @@ export function drawSpellIcon(c, id, x, y, size, {
     label(c, (cooldown > 0 ? cooldown : gcd).toFixed(1), 40, 45, cooldown > 0 ? 25 : 21, cooldown > 0 ? '#fff' : '#c5f9ff');
     label(c, cooldown > 0 ? 'CD' : 'GCD', 40, 63, 10, cooldown > 0 ? '#d9e3ff' : '#9ce5ed');
   }
-  if (typeof key === 'string' && key) label(c, key, 13, 14, 15, '#fff');
+  if (typeof key === 'string' && key) drawKeyLabel(c, key);
   if (storedCharges || maxCharges > 0 || charges > 0) label(c, String(charges), 67, 67, 14, icon.light);
   c.restore();
 }

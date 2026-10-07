@@ -2,6 +2,7 @@ import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest';
 import {flushSync, mount, tick, unmount} from 'svelte';
 import App from '../src/App.svelte';
 import {ABILITIES, DEFAULT_LOADOUT} from '../src/lib/catalogue.js';
+import {STORAGE_KEY} from '../src/lib/keybindings.js';
 
 let app, tools, signals;
 const $ = id => document.getElementById(id);
@@ -18,6 +19,7 @@ function runFrame(now) {
 
 beforeEach(() => {
   tools = new Map(); signals = [];
+  localStorage.clear();
   document.body.replaceChildren(); document.hidden = false; document.hasFocus = () => true;
   document.modelContext = {registerTool(tool, options) { tools.set(tool.name, tool); signals.push(options.signal); }};
   app = mount(App, {target: document.body}); flushSync();
@@ -84,24 +86,24 @@ describe('Svelte parity', () => {
     click('restartBtn'); await tick(); expect(app.sim.totalDamage).toBe(0);
     expect($('summaryDialog').open).toBe(false);
   });
-  test('Q/E/R/4/5 dispatch the selected slots and movement cancels a channel', () => {
+  test('1/2/3/4/5 dispatch the selected slots and movement cancels a channel', () => {
     flushSync(() => app.startSession());
-    expect(key('Digit1').defaultPrevented).toBe(false);
-    for (const [index, code] of ['KeyQ', 'KeyE', 'KeyR', 'Digit4', 'Digit5'].entries()) {
+    expect(key('KeyQ').defaultPrevented).toBe(false);
+    for (const [index, code] of ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].entries()) {
       const id = DEFAULT_LOADOUT.abilities[index];
       key(code);
       expect(app.sim.castCounts[id]).toBeGreaterThan(0);
       app.sim.advance(20);
     }
-    key('KeyR'); expect(app.sim.cast.spell).toBe('gloam-thread');
+    key('Digit3'); expect(app.sim.cast.spell).toBe('gloam-thread');
     key('KeyW'); expect(app.sim.input.y).toBe(-1); expect(app.sim.cast).toBe(null);
     key('KeyW', 'keyup'); expect(app.sim.input.y).toBe(0);
-    const outside = key('KeyQ', 'keydown', $('seedInput')); expect(outside.defaultPrevented).toBe(false);
+    const outside = key('Digit1', 'keydown', $('seedInput')); expect(outside.defaultPrevented).toBe(false);
   });
   test('Tab cycles, repeats do not recast, and Escape pauses/releases focus', () => {
     flushSync(() => app.startSession()); app.sim.spawnWave(); update();
     key('Tab'); expect(app.sim.selectedId).not.toBe('dummy');
-    key('KeyQ', 'keydown', $('arena'), true); expect(app.sim.totalDamage).toBe(0);
+    key('Digit1', 'keydown', $('arena'), true); expect(app.sim.totalDamage).toBe(0);
     key('Escape'); expect(app.sim.phase).toBe('paused'); expect(document.activeElement).not.toBe($('arena'));
   });
   test('Help pause/close/Escape/explicit resume preserve time and clear movement', async () => {
@@ -130,7 +132,7 @@ describe('Svelte parity', () => {
     expect($('seedInput').value).toBe('123'); expect($('mechanicsInput').checked).toBe(false);
     expect($('layoutInput').value).toBe('clustered');
     expect([...document.querySelectorAll('.ability')].map(button => button.dataset.spell)).toEqual(loadout.abilities);
-    expect(document.querySelector('[data-spell="chain-strike"]').getAttribute('aria-label')).toMatch(/^Q\./);
+    expect(document.querySelector('[data-spell="chain-strike"]').getAttribute('aria-label')).toMatch(/^1\./);
     flushSync(() => app.startSession()); expect(app.sim.loadout).toEqual(loadout);
     expect(app.sim.layout).toBe('clustered');
     expect(() => app.configure({seed: 4})).toThrow(/Stop/);
@@ -295,10 +297,10 @@ describe('orb loadout configuration', () => {
     click('helpBtn');
     tap(document.querySelector('#helpDialog [aria-label="Move Lingering Glimmer earlier"]'));
     expect(app.sim.loadout.abilities.slice(0, 2)).toEqual(['lingering-glimmer', 'veil-bolt']);
-    expect(document.querySelector('[data-spell="lingering-glimmer"]').getAttribute('aria-label')).toMatch(/^Q\./);
-    expect(document.querySelector('#helpDialog [data-slot="Q"]').textContent).toContain('Lingering Glimmer');
+    expect(document.querySelector('[data-spell="lingering-glimmer"]').getAttribute('aria-label')).toMatch(/^1\./);
+    expect(document.querySelector('#helpDialog [data-slot="1"]').textContent).toContain('Lingering Glimmer');
     click('helpDone'); click('startBtn');
-    key('KeyQ'); expect(app.sim.castCounts['lingering-glimmer']).toBe(1);
+    key('Digit1'); expect(app.sim.castCounts['lingering-glimmer']).toBe(1);
     expect(app.sim.castCounts['veil-bolt']).toBeUndefined();
   });
   test('hover and keyboard focus expose ability and talent details', () => {
@@ -382,5 +384,212 @@ describe('loadout lifecycle regressions', () => {
     expect(document.querySelector('.active-buffs').textContent).toContain('15s');
     app.sim.advance(15); update();
     expect(document.querySelector('.active-buffs').textContent).toBe('');
+  });
+});
+
+function bindingButton(index) { return document.querySelector(`[data-binding-slot="${index}"]`); }
+function setBinding(index, code, options = {}) {
+  tap(bindingButton(index));
+  const event = new KeyboardEvent('keydown', {code, bubbles: true, cancelable: true, ...options});
+  bindingButton(index).dispatchEvent(event); flushSync();
+  return event;
+}
+
+describe('custom spell keybindings', () => {
+  test('defaults are 1–5 across the action bar, Help, arena instructions and WebMCP', async () => {
+    expect(app.sim.spells.map(spell => spell.key)).toEqual(['1', '2', '3', '4', '5']);
+    expect($('arena').getAttribute('aria-label')).toContain('1, 2, 3, 4, 5');
+    expect(document.querySelector('#helpDialog .control-legend').textContent).toContain('12345 Cast');
+    const state = await tools.get('read_training_session').execute({});
+    expect(state.keybindings).toEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']);
+    expect(state.availableSpells.map(spell => spell.keyCode)).toEqual(state.keybindings);
+    click('startBtn'); key('KeyQ'); key('KeyE'); key('KeyR');
+    expect(app.sim.cast).toBe(null); expect(app.sim.totalDamage).toBe(0);
+    key('Digit1'); expect(app.sim.cast.spell).toBe('veil-bolt');
+  });
+  test('capture saves a custom physical key and rejects the old mapping', async () => {
+    click('keybindingsBtn');
+    expect($('keybindingsDialog').open).toBe(true);
+    expect(document.activeElement).toBe(bindingButton(0));
+    setBinding(0, 'KeyQ', {key: 'q'}); click('saveKeybindings'); await tick();
+    expect($('keybindingsDialog')).toBe(null);
+    expect(document.activeElement).toBe($('keybindingsBtn'));
+    expect($('keybindingNotice').textContent).toContain('saved in this browser');
+    expect(document.querySelector('[data-spell="veil-bolt"]').getAttribute('aria-label')).toMatch(/^Q\./);
+    expect($('arena').getAttribute('aria-label')).toContain('Q, 2, 3, 4, 5');
+    expect(document.querySelector('#helpDialog .control-legend').textContent).toContain('Q2345 Cast');
+    click('startBtn'); key('Digit1'); expect(app.sim.cast).toBe(null);
+    const event = new KeyboardEvent('keydown', {code: 'KeyQ', key: 'Q', bubbles: true, cancelable: true});
+    $('arena').dispatchEvent(event); flushSync();
+    expect(app.sim.cast.spell).toBe('veil-bolt');
+  });
+  test('duplicate, movement, pause, reserved and modifier conflicts preserve every draft binding', () => {
+    click('keybindingsBtn');
+    for (const [code, options] of [['Digit2', {}], ['KeyW', {}], ['KeyP', {}], ['Enter', {}], ['F5', {}], ['KeyQ', {ctrlKey: true}], ['KeyQ', {altKey: true}], ['KeyQ', {metaKey: true}], ['KeyQ', {shiftKey: true}], ['KeyQ', {isComposing: true}], ['KeyQ', {repeat: true}]]) {
+      setBinding(0, code, options);
+      expect(bindingButton(0).getAttribute('aria-label')).toContain('currently 1');
+      expect(bindingButton(1).getAttribute('aria-label')).toContain('currently 2');
+      expect($('saveKeybindings').disabled).toBe(true);
+      expect($('bindingFeedback').textContent.length).toBeGreaterThan(5);
+      click('cancelKeyCapture');
+    }
+    click('saveKeybindings'); expect(app.sim.keybindings).toEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']);
+  });
+  test('Escape cancels capture first and cancels the entire draft on the next press', async () => {
+    click('keybindingsBtn'); setBinding(0, 'KeyQ'); tap(bindingButton(1));
+    key('Escape', 'keydown', bindingButton(1));
+    expect($('keybindingsDialog').open).toBe(true);
+    expect($('cancelKeyCapture')).toBe(null);
+    expect(bindingButton(0).textContent).toContain('Q');
+    expect(bindingButton(1).textContent).toContain('2');
+    key('Escape', 'keydown', bindingButton(1), true);
+    expect($('keybindingsDialog').open).toBe(true);
+    key('Escape', 'keydown', bindingButton(1)); await tick();
+    expect($('keybindingsDialog')).toBe(null);
+    expect(app.sim.spells[0].key).toBe('1');
+    expect(document.activeElement).toBe($('keybindingsBtn'));
+    click('keybindingsBtn'); expect(bindingButton(0).textContent).toContain('1');
+    $('keybindingsDialog').dispatchEvent(new Event('cancel', {cancelable: true})); flushSync();
+    expect($('keybindingsDialog')).toBe(null);
+  });
+  test('Tab exits capture without assigning a targeting key or trapping navigation', () => {
+    click('keybindingsBtn'); tap(bindingButton(0));
+    const event = key('Tab', 'keydown', bindingButton(0));
+    expect(event.defaultPrevented).toBe(false);
+    expect($('cancelKeyCapture')).toBe(null);
+    expect($('bindingFeedback').textContent).toContain('Tab is reserved');
+    expect(bindingButton(0).getAttribute('aria-label')).toContain('currently 1');
+  });
+  test('opening mid-run freezes combat and held movement; save never resumes or catches up time', async () => {
+    const now = performance.now(); vi.spyOn(performance, 'now').mockReturnValue(now);
+    click('startBtn'); key('KeyW'); app.sim.advance(1);
+    click('keybindingsBtn');
+    expect(app.sim.phase).toBe('paused'); expect(app.sim.input.y).toBe(0);
+    const time = app.sim.time; const damage = app.sim.totalDamage;
+    setBinding(0, 'KeyQ');
+    expect(app.castSpell('lingering-glimmer')).toMatchObject({ok: false});
+    key('Digit2'); key('KeyD'); key('KeyP');
+    expect(app.sim.input.x).toBe(0); expect(app.sim.phase).toBe('paused');
+    await expect(tools.get('resume_training_session').execute({})).resolves.toMatchObject({ok: false});
+    expect(app.startSession()).toMatchObject({ok: false});
+    app.sim.advance(50); runFrame(now + 50000);
+    expect(app.sim.time).toBe(time); expect(app.sim.totalDamage).toBe(damage);
+    click('saveKeybindings'); await tick();
+    expect(app.sim.phase).toBe('paused'); expect(app.sim.time).toBe(time);
+    vi.spyOn(performance, 'now').mockReturnValue(now + 50000);
+    click('pauseBtn'); await tick(); runFrame(now + 50100);
+    expect(app.sim.time).toBeCloseTo(time + .1);
+    key('KeyW', 'keydown', $('arena'), true); expect(app.sim.input.y).toBe(0);
+    key('KeyW', 'keyup'); key('KeyW'); expect(app.sim.input.y).toBe(-1);
+  });
+  test('typing outside the arena, unfocused events and modified keys cannot cast or move', () => {
+    click('startBtn'); $('keybindingsBtn').focus();
+    key('Digit2'); key('KeyW'); expect(app.sim.totalDamage).toBe(0); expect(app.sim.input.y).toBe(0);
+    $('arena').focus();
+    for (const options of [{ctrlKey: true}, {metaKey: true}, {altKey: true}, {shiftKey: true}, {isComposing: true}, {repeat: true}]) {
+      $('arena').dispatchEvent(new KeyboardEvent('keydown', {code: 'Digit2', bubbles: true, cancelable: true, ...options})); flushSync();
+    }
+    expect(app.sim.totalDamage).toBe(0);
+    const input = document.createElement('input'); document.body.append(input); input.focus();
+    expect(key('Digit2', 'keydown', input).defaultPrevented).toBe(false);
+    expect(app.sim.totalDamage).toBe(0);
+  });
+  test('help opens the editor without stacking dialogs; stop discards draft and shows summary', async () => {
+    click('startBtn'); click('helpBtn'); click('helpKeybindings');
+    expect($('helpDialog').open).toBe(false); expect($('keybindingsDialog').open).toBe(true);
+    setBinding(0, 'KeyQ');
+    await tools.get('stop_training_session').execute({}); flushSync();
+    expect($('keybindingsDialog')).toBe(null); expect($('summaryDialog').open).toBe(true);
+    expect(app.sim.keybindings[0]).toBe('Digit1');
+    click('reviewBtn'); click('keybindingsBtn'); expect(bindingButton(0).textContent).toContain('1');
+  });
+  test('saved bindings survive component reload; reset is a cancelable draft until saved', async () => {
+    click('keybindingsBtn'); setBinding(0, 'KeyQ'); setBinding(4, 'Numpad5'); click('saveKeybindings');
+    await unmount(app); app = mount(App, {target: document.body}); flushSync();
+    expect(app.sim.keybindings).toEqual(['KeyQ', 'Digit2', 'Digit3', 'Digit4', 'Numpad5']);
+    click('keybindingsBtn'); click('resetKeybindings'); expect(bindingButton(0).textContent).toContain('1');
+    click('cancelKeybindings'); expect(app.sim.spells[0].key).toBe('Q');
+    click('keybindingsBtn'); click('resetKeybindings'); click('saveKeybindings');
+    await unmount(app); app = mount(App, {target: document.body}); flushSync();
+    expect(app.sim.keybindings).toEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']);
+  });
+  test('custom bindings follow reordered slots through restart and report current WebMCP mappings', async () => {
+    click('keybindingsBtn'); setBinding(0, 'KeyQ'); click('saveKeybindings');
+    click('helpBtn'); tap(document.querySelector('#helpDialog [aria-label="Move Lingering Glimmer earlier"]'));
+    expect(document.querySelector('#helpDialog [data-slot="Q"]').textContent).toContain('Lingering Glimmer');
+    expect(app.sim.spells[0]).toMatchObject({id: 'lingering-glimmer', key: 'Q', keyCode: 'KeyQ'});
+    click('helpDone'); click('startBtn'); key('KeyQ');
+    expect(app.sim.castCounts['lingering-glimmer']).toBe(1);
+    click('stopBtn'); expect(document.querySelector('.summary-loadout kbd').textContent).toBe('Q');
+    click('reviewBtn'); click('keybindingsBtn'); setBinding(0, 'KeyE'); click('saveKeybindings');
+    expect(app.sim.summary.keyLabels[0]).toBe('Q');
+    expect(document.querySelector('.summary-loadout kbd').textContent).toBe('Q');
+    const state = await tools.get('read_training_session').execute({});
+    expect(state.availableSpells[0]).toMatchObject({id: 'lingering-glimmer', key: 'E', keyCode: 'KeyE'});
+    click('startBtn'); click('restartBtn'); key('KeyE');
+    expect(app.sim.castCounts['lingering-glimmer']).toBe(1);
+  });
+  test('window blur cancels capture; unmount removes dialog and event handlers', async () => {
+    click('startBtn'); click('keybindingsBtn'); tap(bindingButton(0));
+    window.dispatchEvent(new Event('blur')); flushSync();
+    expect($('cancelKeyCapture')).toBe(null); expect(app.sim.spells[0].key).toBe('1');
+    tap(bindingButton(0)); const sim = app.sim;
+    await unmount(app); app = null;
+    expect($('keybindingsDialog')).toBe(null);
+    document.dispatchEvent(new KeyboardEvent('keydown', {code: 'KeyQ', bubbles: true}));
+    expect(sim.keybindings[0]).toBe('Digit1'); expect(sim.phase).toBe('paused');
+    app = mount(App, {target: document.body}); flushSync();
+    click('keybindingsBtn'); expect($('cancelKeyCapture')).toBe(null);
+  });
+  test('a held captured Space or arrow cannot reactivate Change or scroll the dialog', () => {
+    click('keybindingsBtn');
+    for (const code of ['Space', 'ArrowLeft']) {
+      setBinding(0, code);
+      expect($('cancelKeyCapture')).toBe(null);
+      expect(key(code, 'keydown', bindingButton(0), true).defaultPrevented).toBe(true);
+      expect(key(code, 'keyup', bindingButton(0)).defaultPrevented).toBe(true);
+      expect($('cancelKeyCapture')).toBe(null);
+      expect(key(code, 'keydown', bindingButton(0), true).defaultPrevented).toBe(false);
+    }
+  });
+  test('Space, punctuation, arrows and numpad use the same captured code for casting', () => {
+    for (const code of ['Space', 'Semicolon', 'ArrowLeft', 'Numpad1']) {
+      if (app.sim.phase === 'running') { click('stopBtn'); click('reviewBtn'); }
+      click('keybindingsBtn'); setBinding(1, code); click('saveKeybindings');
+      flushSync(() => app.startSession()); key(code);
+      expect(app.sim.castCounts['lingering-glimmer']).toBe(1);
+      expect(app.sim.spells[1].keyCode).toBe(code);
+      expect(key(code, 'keydown', $('arena'), true).defaultPrevented).toBe(true);
+      expect(app.sim.castCounts['lingering-glimmer']).toBe(1);
+    }
+  });
+});
+
+
+describe('keybinding storage failure integration', () => {
+  test('corrupt saved settings default safely and show a clear notice', async () => {
+    await unmount(app); localStorage.setItem(STORAGE_KEY, '{bad json');
+    app = mount(App, {target: document.body}); flushSync();
+    expect(app.sim.keybindings).toEqual(['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5']);
+    expect($('keybindingNotice').textContent).toContain('invalid');
+    click('startBtn'); key('Digit1'); expect(app.sim.cast.spell).toBe('veil-bolt');
+  });
+  test('blocked storage does not block opening, changing, resetting or playing', async () => {
+    await unmount(app);
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {configurable: true, get() { throw new Error('Blocked'); }});
+    try {
+      app = mount(App, {target: document.body}); flushSync();
+      expect($('keybindingNotice').textContent).toContain('unavailable');
+      click('keybindingsBtn'); setBinding(0, 'KeyQ'); click('saveKeybindings');
+      expect(app.sim.keybindings[0]).toBe('KeyQ');
+      expect($('keybindingNotice').textContent).toContain('this visit only');
+      click('startBtn'); key('KeyQ'); expect(app.sim.cast.spell).toBe('veil-bolt');
+      click('keybindingsBtn'); click('resetKeybindings'); click('saveKeybindings');
+      expect(app.sim.keybindings[0]).toBe('Digit1'); expect(app.sim.phase).toBe('paused');
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
+      else delete globalThis.localStorage;
+    }
   });
 });

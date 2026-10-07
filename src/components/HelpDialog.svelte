@@ -9,6 +9,8 @@
     settings = { seed: 72821, loadout: DEFAULT_LOADOUT, mechanics: true, layout: 'spread' },
     abilities = [],
     warnings = [],
+    keys = SLOT_KEYS,
+    onkeybindings = () => {},
     onsettings = () => {},
     onclose = () => {},
     detail = null,
@@ -46,12 +48,13 @@
   <div class="help-body">
     <div class="control-legend">
       <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
-      <span><kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd><kbd>4</kbd><kbd>5</kbd> Cast</span>
+      <span>{#each keys as key}<kbd>{key}</kbd>{/each} Cast</span>
       <span><kbd>Tab</kbd> Target</span><span><kbd>P</kbd> Pause</span><span><kbd>Esc</kbd> Release focus</span>
     </div>
+    <button type="button" id="helpKeybindings" class="quiet" onclick={onkeybindings}>Customize spell keys</button>
     <details id="settings" open>
       <summary>Loadout &amp; session setup</summary>
-      <LoadoutPicker {abilities} loadout={settings.loadout} keys={SLOT_KEYS} disabled={active} {warnings} idPrefix="help-loadout" onchange={loadout => onsettings({loadout})} />
+      <LoadoutPicker {abilities} loadout={settings.loadout} {keys} disabled={active} {warnings} idPrefix="help-loadout" onchange={loadout => onsettings({loadout})} />
       <div class="session-setup">
         <label class="seed-label">Practice seed<input id="seedInput" type="number" value={settings.seed} min="1" max="4294967295" step="1" disabled={active} onchange={event => onsettings({seed: Number(event.currentTarget.value) || 72821})}></label>
         <label class="seed-label">Echo layout<select id="layoutInput" value={settings.layout} disabled={active} onchange={event => onsettings({layout: event.currentTarget.value})}><option value="spread">Spread</option><option value="clustered">Clustered</option></select></label>

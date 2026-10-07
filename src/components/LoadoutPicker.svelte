@@ -4,7 +4,7 @@
   let {
     abilities = [],
     loadout = { abilities: [], talents: {} },
-    keys = ['Q', 'E', 'R', '4', '5'],
+    keys = ['1', '2', '3', '4', '5'],
     disabled = false,
     warnings = [],
     idPrefix = 'loadout',

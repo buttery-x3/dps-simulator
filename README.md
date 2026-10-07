@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-Open the local address printed by Vite (usually <http://127.0.0.1:5173>). The default server binds to this computer. `npm start` is an alias. There is no backend, account, analytics, or persistent storage.
+Open the local address printed by Vite (usually <http://127.0.0.1:5173>). The default server binds to this computer. `npm start` is an alias. There is no backend, account or analytics. Only spell keybindings are saved locally in the browser.
 
 ## Choose a loadout
 
@@ -20,7 +20,7 @@ Start immediately with five base abilities, or open **Customize loadout** before
 - Eight large ability orbs, each with three connected talent orbs.
 - Select one to five abilities, with five selected by default.
 - Five available talent points. Each selected ability can have zero or one talent; no stacking and no requirement to spend every point.
-- The five ordered slots assign **Q / E / R / 4 / 5**. Use slot arrows to rearrange them.
+- The five ordered slots default to **1 / 2 / 3 / 4 / 5**. Use slot arrows to rearrange abilities; customized keys stay with their slots.
 - Focus or hover an orb for its description. Click a selected talent again to remove it. Native buttons support keyboard selection.
 - A warning explains a spender without a generator. The loadout remains legal for experimentation.
 - Choose clustered or spread stationary echoes to compare area attacks and chain bounces.
@@ -34,7 +34,7 @@ The 8 abilities and 24 talents are provisional prototype tuning, not a balanced 
 
 - **WASD:** move.
 - **Tab or click:** select a target.
-- **Q / E / R / 4 / 5:** use the ability assigned to that slot.
+- **1 / 2 / 3 / 4 / 5:** use the ability assigned to that slot by default. Open **Keybindings** to customize all five slots.
 - **P:** pause/resume. **Escape:** pause and release arena keyboard focus.
 - **Help:** controls, loadout, setup, exact metric definitions. Opening Help pauses; closing leaves the run paused unless you choose **Close and resume**.
 - **Stop:** preserve a summary. Start a new session when ready.
@@ -42,6 +42,18 @@ The 8 abilities and 24 talents are provisional prototype tuning, not a balanced 
 Instant spells work while moving. Ordinary casts and channels require stillness; Drifting Flare is a moving cast. Moving, losing a target, or clipping a channel stops future ticks. Gloam Storm commits its cooldown at channel start even when interrupted. Full Conduit grants resource only after a complete Gloam Thread channel, including a lethal final tick.
 
 The sentinel never dies. Two stationary echoes arrive at 14 seconds and every 30 seconds afterward, up to four live echoes. Each fades after 40 seconds. Circles and lanes telegraph ground impacts; a hit adds 1,000 damage taken without ending the session. There is no victory condition or enemy AI. Touch movement and targeting are included; desktop keyboard play remains primary.
+
+## Customize spell keybindings
+
+Open **Keybindings** in the header or **Customize spell keys** in Help. Select a slot, then press its new key. Conflicts are explained without replacing another slot. **Save keys** applies the draft; **Cancel** or the close button discards it. **Reset to 1–5** only resets the draft until you save.
+
+- Escape cancels an active capture. Press Escape again to close without saving. Tab cancels capture and continues native dialog navigation. A visible **Cancel capture** button is also available.
+- Each slot has exactly one unique physical `KeyboardEvent.code`. Keys follow slots when abilities are reordered, including currently empty slots. Action-bar icons, above-player readiness cues, loadout orbs, Help, arena instructions and WebMCP readback use the same mapping.
+- Supported keys: letters other than WASD/P; top-row digits 0–9; the US punctuation positions backquote, minus, equal, brackets, backslash, semicolon, quote, comma, period and slash; arrow keys; Space; numpad digits and add/subtract/multiply/divide/decimal/comma/equal. Numpad bindings are separate from top-row numbers. Num Lock does not change a physical numpad binding when the browser supplies its code.
+- WASD movement, Tab targeting, P pause, Escape focus release and Enter start are reserved. Backspace, function keys, modifier keys and browser-control keys are not assignable. Ctrl/Alt/Command/Shift combinations, auto-repeat and text-composition events never cast. Labels use US physical-key names; another keyboard layout or Caps Lock does not change the binding. Some OS/device shortcuts never reach a browser and are not supported.
+- Opening the editor pauses a running session and clears held movement. Save and Cancel leave it paused. Resume explicitly when ready; editing does not add elapsed time or damage. Keyboard combat requires arena focus and never runs while a dialog is open or while typing in a form.
+- Preferences are stored under `veilweaver.keybindings.v1` in this site's localStorage, only in this browser on this device. They do not sync to an account. Invalid or unsupported saved data safely restores defaults with a notice; unavailable storage permits changes for this visit and reports the limitation. Results and loadout setup are still cleared on page reload.
+- A completed summary preserves the keys present when the run stopped, even if preferences are changed afterward. Mid-run edits only change keys, never combat tuning or the selected abilities.
 
 ## Extensible spell definitions
 
@@ -70,13 +82,13 @@ npm run verify
 
 This runs Svelte diagnostics, core catalogue/engine/readability tests, compiled Svelte component integration/layout tests, and a production build. Individual commands: `npm run check`, `npm run test:core`, `npm run test:ui`, `npm run build`.
 
-Tests exercise all 32 base/talent forms, interaction boundaries, schema failures, data-only extension, deterministic timers, charge/resource separation, no-recursion links, cast/channel interruptions, DoT coverage, exact DPS, seed replay, hazards, loadout selection, keyboard mapping, Help/summary/focus/touch flows, teardown and native Canvas rendering. There is no hosted CI workflow.
+Tests exercise all 32 base/talent forms, interaction boundaries, schema failures, data-only extension, deterministic timers, charge/resource separation, no-recursion links, cast/channel interruptions, DoT coverage, exact DPS, seed replay, hazards, loadout selection, default/custom keyboard mapping, capture/cancel/conflicts/reset, persistence/storage failure, Help/summary/focus/touch flows, teardown and native Canvas rendering. There is no hosted CI workflow.
 
 ### Verification limits
 
-Compiled component tests use Happy DOM with native Canvas; they do not establish real-browser layout, live combat feel or touch-device behavior. Real-browser launch is unavailable in the current execution environment. Before merging or publishing, smoke-test the branch in a target browser: loadout/orb selection, reorder, start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, desktop viewport heights and mobile layout. WebMCP registration is tested with a mock, not a live browser implementation.
+Compiled component tests use Happy DOM with native Canvas; they do not establish real-browser layout, live combat feel or touch-device behavior. Real-browser launch is unavailable in the current execution environment. Before merging or publishing, smoke-test the branch in a target browser: loadout/orb selection, reorder, key capture/Save/Cancel/Escape/Tab/reset, browser reload persistence, long key labels, start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, desktop viewport heights and mobile layout. WebMCP registration is tested with a mock, not a live browser implementation.
 
-The unmerged viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This feature branch is based on `fix/arena-viewport-height` (`c31b0bd`), one commit ahead of main at `9ea85a1`. It does not merge or deploy either branch.
+The viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This keybindings branch was created directly from the last verified `feature/extensible-spell-catalogue` tip (`dcdb23aab80ea0165f09b5a765bee9ad134c5348`), preserving its spell catalogue and UI improvements. The source branch had been removed by the time this task started; the exact feature commit was verified on GitHub. This work does not merge or deploy any branch.
 
 ## Build and preview
 
@@ -93,6 +105,8 @@ The static production output is `dist/`; relative asset URLs support a domain ro
 src/App.svelte                  Session lifecycle, inputs and reactive HUD
 src/components/LoadoutPicker.svelte  Orb/talent selection and ordered slots
 src/components/HelpDialog.svelte     Help and setup
+src/components/KeybindingsDialog.svelte  Draft key capture, cancel and reset
+src/lib/keybindings.js          Physical-key validation and local preferences
 src/components/SummaryDialog.svelte  Frozen results
 src/lib/catalogue.js            Canonical data, validation, patches and compiler
 src/lib/effect-handlers.js      Reusable effect handlers
