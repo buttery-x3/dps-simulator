@@ -63,7 +63,7 @@
   </div>
   <div class="help-secondary">
     <section class="spell-detail"><p class="eyebrow" id="detailType">{currentDetail.type}</p><h2 id="detailName">{currentDetail.name}</h2><p id="detailText">{currentDetail.text}</p></section>
-    <section class="help-note"><h3>The drill</h3><p>Stationary echoes join at 0:14, then every 30s. They fade after 40s. The sentinel never dies. Dodge amber circles and lanes before their timers reach zero. Ground hits add 1,000 damage taken.</p></section>
+    <section class="help-note"><h3>The drill</h3><p>Stationary echoes join at 0:14, then every 30s. They fade after 40s. The sentinel never dies. Dodge red circles and lanes before their timers reach zero. Ground hits add 1,000 damage taken.</p></section>
   </div>
   <section id="metricHelp" class="help-note" bind:this={metricHelp}>
     <h3>Damage metrics</h3>

@@ -93,6 +93,27 @@ describe('arena resizing and letterboxed pointer mapping', () => {
 });
 
 describe('loadout layout and interaction styling contracts', () => {
+  test('keeps Customize with the left heading and allows the count to wrap on narrow screens', () => {
+    const rulesFor = (rules, selector) => rules.filter(rule => rule.selectorText === selector).at(-1)?.style;
+    const baseRules = [...sheet.cssRules];
+    const heading = rulesFor(baseRules, '.preplay-setup .setup-heading');
+    expect(heading.display).toBe('inline-flex');
+    expect(heading.gap).toBe('12px');
+    expect(heading.flexShrink).toBe('0');
+    expect(rulesFor(baseRules, '.preplay-setup .setup-action').marginLeft).toBe('');
+    expect(rulesFor(baseRules, '.preplay-setup .setup-action').whiteSpace).toBe('nowrap');
+    expect(rulesFor(baseRules, '.preplay-setup .setup-count').marginLeft).toBe('auto');
+    const narrowRules = baseRules.filter(rule => rule.conditionText === '(max-width:650px)').flatMap(rule => [...rule.cssRules]);
+    expect(rulesFor(narrowRules, '.preplay-setup>summary').flexWrap).toBe('wrap');
+    expect(rulesFor(narrowRules, '.preplay-setup .setup-count').marginLeft).toBe('0px');
+    expect(rulesFor(baseRules, '.preplay-setup .setup-action::after').content).toBe("' +'");
+    expect(rulesFor(baseRules, '.preplay-setup[open] .setup-action::after').content).toBe("' −'");
+    expect(styles).toContain('summary:focus-visible');
+  });
+  test('removes orphaned standalone void styles and preserves active effect styling', () => {
+    expect(styles).not.toContain('.shards');
+    expect(styles).toContain('.active-buffs{display:flex;flex-wrap:wrap');
+  });
   test('setup is an opt-in flowing section and never adds a viewport subtraction', () => {
     expect(styles).toContain('.preplay-setup{flex:none;');
     expect(styles).toContain('.loadout-catalogue{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))');

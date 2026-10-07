@@ -36,20 +36,38 @@ describe('Svelte parity', () => {
     expect(app.sim.player.y).toBe(445);
     expect(app.sim.targets[0].y).toBe(160);
   });
-  test('keeps the removed tip element absent through sessions while preserving shared void resource', () => {
-    const expectNoTip = () => {
+  test('removes the standalone void display while preserving resource generation, Rift readiness and restart', () => {
+    const expectNoStandaloneStatus = () => {
       expect($('notice')).toBeNull();
       expect(document.body.textContent).not.toContain('Keep your DoT on every target. Save instant casts for movement.');
-      expect(document.querySelectorAll('.shards i')).toHaveLength(3);
+      expect(document.querySelector('.shards')).toBeNull();
+      expect(document.querySelector('[aria-label^="Void resource:"]')).toBeNull();
+      expect(document.querySelector('.combat-status').textContent).not.toContain('VOID');
     };
-    expectNoTip();
-    flushSync(() => app.startSession()); expectNoTip();
-    flushSync(() => app.castSpell('destructive-rift')); expectNoTip();
-    app.sim.shards = 3; update();
-    expect(document.querySelectorAll('.shards i.filled')).toHaveLength(3);
-    flushSync(() => app.stopSession());
-    click('restartBtn'); expectNoTip();
-    expect(document.querySelectorAll('.shards i.filled')).toHaveLength(0);
+    expectNoStandaloneStatus();
+    flushSync(() => app.configure({loadout: {abilities: ['gloam-thread', 'destructive-rift'], talents: {'gloam-thread': 'v2'}}}));
+    const rift = document.querySelector('[data-spell="destructive-rift"]');
+    expect(rift.querySelector('.ability-state').textContent).toBe('0/3 void');
+    expect(rift.classList.contains('is-locked')).toBe(true);
+    flushSync(() => app.startSession()); expectNoStandaloneStatus();
+    for (let resource = 1; resource <= 3; resource++) {
+      flushSync(() => app.castSpell('gloam-thread')); app.sim.advance(3); update();
+      expect(app.sim.resource.value).toBe(resource);
+      expectNoStandaloneStatus();
+    }
+    expect(rift.querySelector('.ability-state').textContent).toBe('READY');
+    expect(rift.getAttribute('aria-label')).toContain('Destructive Rift. READY');
+    expect(rift.classList.contains('is-ready')).toBe(true);
+    flushSync(() => app.castSpell('destructive-rift')); app.sim.advance(1.5); update();
+    expect(app.sim.resource.value).toBe(0);
+    expect(rift.querySelector('.ability-state').textContent).toBe('0/3 void');
+    expect(rift.classList.contains('is-ready')).toBe(false);
+    flushSync(() => app.pauseSession()); expectNoStandaloneStatus();
+    flushSync(() => app.resumeSession()); expectNoStandaloneStatus();
+    flushSync(() => app.stopSession()); expectNoStandaloneStatus();
+    click('restartBtn'); expectNoStandaloneStatus();
+    expect(app.sim.resource.value).toBe(0);
+    expect(rift.classList.contains('is-locked')).toBe(true);
   });
   test('start/cast/pause/resume/stop/restart controls use exact engine state', async () => {
     click('startBtn'); await tick();
@@ -133,7 +151,8 @@ describe('Svelte parity', () => {
     app.sim.shards = 3; update();
     expect(document.querySelector('[data-spell="destructive-rift"]').classList.contains('is-ready')).toBe(true);
     expect(document.querySelector('[data-spell="astral-flare"] .ability-state').textContent).toMatch(/charge/i);
-    expect(document.querySelector('.shards').getAttribute('aria-label')).toContain('3 of 3');
+    expect(document.querySelector('[data-spell="destructive-rift"]').getAttribute('aria-label')).toContain('READY');
+    expect(document.querySelector('.shards')).toBeNull();
     flushSync(() => app.castSpell('astral-flare')); update();
     expect(app.sim.shards).toBe(3);
   });
@@ -189,6 +208,36 @@ function talentOption(id, talent) { return helpNode(id).querySelector(`[data-tal
 function tap(element) { element.click(); flushSync(); }
 
 describe('orb loadout configuration', () => {
+  test('groups Customize beside Your loadout inside the native disclosure and preserves repeated toggles', async () => {
+    const setup = document.querySelector('.preplay-setup');
+    const summary = setup.querySelector('summary');
+    const heading = summary.querySelector('.setup-heading');
+    const action = summary.querySelector('.setup-action');
+    expect(heading.firstElementChild.textContent).toBe('Your loadout');
+    expect(heading.lastElementChild).toBe(action);
+    expect(action.textContent).toBe('Customize');
+    expect(summary.firstElementChild).toBe(heading);
+    expect(heading.nextElementSibling.className).toBe('setup-count');
+    expect(summary.querySelector('button, a, [role="button"]')).toBeNull();
+    summary.focus(); expect(document.activeElement).toBe(summary);
+    // Happy DOM does not implement native summary activation. Toggle its native
+    // state to test Svelte's binding without adding custom keyboard handlers.
+    for (const open of [true, false, true, false, true]) {
+      setup.open = open; setup.dispatchEvent(new Event('toggle')); flushSync(); await tick();
+      expect(Boolean(setup.querySelector('.loadout-picker'))).toBe(open);
+      expect($('startBtn').disabled).toBe(false);
+      expect(app.sim.phase).toBe('ready');
+    }
+    click('startBtn'); await tick();
+    expect(setup.open).toBe(false); expect(setup.hidden).toBe(true);
+    click('pauseBtn'); expect(setup.hidden).toBe(true);
+    click('stopBtn'); click('reviewBtn');
+    expect(setup.hidden).toBe(false); expect(setup.open).toBe(false);
+    setup.open = true; setup.dispatchEvent(new Event('toggle')); flushSync(); await tick();
+    expect(setup.querySelectorAll('.ability-orb')).toHaveLength(8);
+    click('startBtn'); click('restartBtn'); await tick();
+    expect(setup.hidden).toBe(true); expect(setup.open).toBe(false);
+  });
   test('keeps quick start available and exposes the same picker before play and in Help', async () => {
     expect($('startBtn').disabled).toBe(false);
     const setup = document.querySelector('.preplay-setup');

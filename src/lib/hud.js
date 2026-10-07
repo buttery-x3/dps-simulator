@@ -55,8 +55,8 @@ export function buildHud(sim) {
     : cast?.kind === 'channel' ? 'movement interrupts' : 'stand still';
   const notice = sim.notice && sim.notice.until >= sim.tick ? {...sim.notice} : {
     text: readySpender ? `${readySpender.name} ready · ${readySpender.key}`
-      : trackedDots.length ? 'Keep your damage-over-time effects on each target. Dodge amber ground marks.'
-        : 'Use your selected spells. Save mobile casts for amber ground marks.',
+      : trackedDots.length ? 'Keep your damage-over-time effects on each target. Dodge red ground marks.'
+        : 'Use your selected spells. Save mobile casts for red ground marks.',
     kind: 'info',
   };
   return {

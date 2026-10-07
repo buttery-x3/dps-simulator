@@ -255,3 +255,42 @@ test('clustered maintenance badges avoid actors and one another', () => {
     assert.ok(badges.slice(index + 1).every(other => !intersects(badge, other)));
   });
 });
+
+test('hostile circle and lane warning colors are red, while target and friendly spell colors stay distinct', () => {
+  const sim = fresh();
+  const renderer = new ArenaRenderer(createCanvas(1000, 560));
+  const actual = createCanvas(1000, 560).getContext('2d');
+  const colors = [];
+  const context = new Proxy(actual, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set(target, property, value) {
+      if (property === 'fillStyle' || property === 'strokeStyle') colors.push(value);
+      return Reflect.set(target, property, value, target);
+    },
+  });
+  const isRed = color => {
+    if (typeof color !== 'string' || !/^#[a-f\d]{6}([a-f\d]{2})?$/i.test(color)) return false;
+    const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+    return r > g && r > b && b >= g;
+  };
+  for (const type of ['circle', 'line']) for (const live of [false, true]) {
+    colors.length = 0;
+    const hazard = {type, x: 500, y: 350, r: 76, angle: 0, width: 72, born: 0, impact: HZ * 2, ends: HZ * 3};
+    sim.tick = live ? HZ * 2 : HZ;
+    renderer.hazard(context, hazard, sim, false);
+    renderer.hazard(context, hazard, sim, true);
+    assert.ok(colors.length > 2);
+    assert.ok(colors.every(isRed), `${type} ${live ? 'impact' : 'warning'} must use a coherent red palette: ${colors}`);
+  }
+  colors.length = 0;
+  renderer.target(context, sim.target(), sim);
+  assert.ok(colors.includes('#d9c58f'), 'selected target retains its gold outline');
+  colors.length = 0;
+  sim.effect('pulse', sim.target(), {color: '#bc9dff', duration: 1, radius: 220});
+  sim.tick += HZ / 4;
+  renderer.magic(context, sim);
+  assert.ok(colors.some(color => String(color).startsWith('#bc9dff')), 'friendly area spell retains its ability color');
+});

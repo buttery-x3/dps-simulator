@@ -228,7 +228,7 @@
   </section>
 
   <details class="preplay-setup" hidden={active} bind:open={loadoutOpen}>
-    <summary><span>Your loadout</span><span>{settings.loadout.abilities.length}/5 abilities · {talentPoints} talent point{talentPoints === 1 ? '' : 's'} available</span><span class="setup-action">Customize</span></summary>
+    <summary><span class="setup-heading"><span class="setup-title">Your loadout</span><span class="setup-action">Customize</span></span><span class="setup-count">{settings.loadout.abilities.length}/5 abilities · {talentPoints} talent point{talentPoints === 1 ? '' : 's'} available</span></summary>
     {#if loadoutOpen}<LoadoutPicker abilities={catalogue} loadout={settings.loadout} keys={SLOT_KEYS} warnings={loadoutValidation.warnings} idPrefix="preplay-loadout" onchange={loadout => updateSettings({loadout})} />{/if}
   </details>
   <div class="workspace">
@@ -238,7 +238,7 @@
         <div id="overlay" class="arena-overlay" hidden={view.phase === 'running'}><div class="overlay-card">
           <p class="eyebrow" id="overlayEyebrow">{view.phase === 'paused' ? 'CLOCK STOPPED' : view.phase === 'stopped' ? 'SESSION COMPLETE' : 'THE CHAMBER IS YOURS'}</p>
           <h2 id="overlayTitle">{view.phase === 'paused' ? 'Take your time.' : view.phase === 'stopped' ? `${num(view.metrics.sessionDps)} DPS` : "Stand still. Until you can't."}</h2>
-          <p id="overlayBody">{#if view.phase === 'paused'}{view.pauseReason || 'Your session is paused.'}{:else if view.phase === 'stopped'}{num(view.metrics.totalDamage)} damage across {duration(view.metrics.elapsed)} of active time.{:else}Pick your rhythm. Keep your DoTs rolling.<br />Cast in the gaps. Dodge amber ground marks.{/if}</p>
+          <p id="overlayBody">{#if view.phase === 'paused'}{view.pauseReason || 'Your session is paused.'}{:else if view.phase === 'stopped'}{num(view.metrics.totalDamage)} damage across {duration(view.metrics.elapsed)} of active time.{:else}Pick your rhythm. Keep your DoTs rolling.<br />Cast in the gaps. Dodge red ground marks.{/if}</p>
           <button id="overlayAction" class="primary" disabled={!active && view.phase !== 'stopped' && !loadoutValidation.valid} onclick={() => view.phase === 'paused' ? resumeSession() : view.phase === 'stopped' ? showSummary() : startSession()}>{view.phase === 'paused' ? 'Resume session' : view.phase === 'stopped' ? 'View session summary' : 'Start session'}</button>
           <p class="overlay-foot" id="overlayFoot">{view.phase === 'paused' ? 'Your target, cooldowns, and damage are preserved.' : view.phase === 'stopped' ? 'The result stays here until you start a new session.' : "An endless drill. Stop whenever you're ready."}</p>
         </div></div>
@@ -256,7 +256,7 @@
           </button>
         {/each}
       </div>
-      <div class="combat-status"><div class="active-buffs" aria-label="Active spell effects">{#each view.buffs ?? [] as buff (buff.id)}<span>{buff.name} · {Math.ceil(buff.seconds)}s</span>{/each}</div><div class="shards" aria-label={`Void resource: ${view.resource.value} of ${view.resource.max}`}><span>{view.resource.label}</span>{#each Array.from({length: view.resource.max}, (_, index) => index) as shard}<i class:filled={shard < view.resource.value}></i>{/each}</div></div>
+      <div class="combat-status"><div class="active-buffs" aria-label="Active spell effects">{#each view.buffs ?? [] as buff (buff.id)}<span>{buff.name} · {Math.ceil(buff.seconds)}s</span>{/each}</div></div>
       <div class="touch-controls" aria-label="Touch movement controls">
         <div class="dpad">{#each [{x: 0, y: -1, label: 'up', glyph: '↑'}, {x: -1, y: 0, label: 'left', glyph: '←'}, {x: 0, y: 1, label: 'down', glyph: '↓'}, {x: 1, y: 0, label: 'right', glyph: '→'}] as direction}<button data-move={`${direction.x},${direction.y}`} aria-label={`Move ${direction.label}`} onpointerdown={event => touchMove(event, direction.x, direction.y)} onpointerup={touchStop} onpointercancel={touchStop} onlostpointercapture={touchStop}>{direction.glyph}</button>{/each}</div>
         <button id="touchTarget" onclick={() => { cycleTarget(); focusArena(); }}>Next target</button>

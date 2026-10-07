@@ -50,7 +50,7 @@ export class RaidSim {
     this.interrupts = 0; this.wastedShards = 0; this.breakdown = {}; this.targetDamage = {}; this.castCounts = {};
     this.coverage = Object.fromEntries(this.maintenanceDots.map(dot => [dot.id, {...dot, coveredTicks: 0, availableTicks: 0}]));
     this.nextWave = ticks(14); this.nextHazard = ticks(6); this.wave = 0; this.hazardCount = 0; this.eventId = 0; this.summary = null;
-    this.notice = {text: this.loadoutWarnings[0] || 'Choose your rhythm. Keep damage rolling and dodge amber ground marks.', kind: this.loadoutWarnings.length ? 'warn' : 'info', until: ticks(5)};
+    this.notice = {text: this.loadoutWarnings[0] || 'Choose your rhythm. Keep damage rolling and dodge red ground marks.', kind: this.loadoutWarnings.length ? 'warn' : 'info', until: ticks(5)};
   }
   // Shared resource alias retained for metrics adapters, never stored spell charges.
   get shards() { return this.resource.value; }
