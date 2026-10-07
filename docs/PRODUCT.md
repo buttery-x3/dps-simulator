@@ -4,17 +4,22 @@
 
 VEILWEAVER stays a browser game: open a link, load quickly, and start practicing ranged DPS while dodging. Keep iteration lightweight and make moment-to-moment combat readable. A standalone repository changes how the source is maintained, not this browser-first goal.
 
+## Astral identity
+
+A Veilweaver expands their mind to understand reality and weaves the veil’s astral threads into the world to manipulate it and deal damage. **Astral charges** express the shared energy built by selected talents and spent by Destructive Rift. This is reality-weaving, not psychic damage or corruption. Stored spell charges are separate rechargeable uses of an individual ability.
+
 ## Implemented today
 
 - A single endless practice arena with a permanent sentinel and timed stationary adds.
 - Eight declarative abilities with three talents each, one-to-five ordered spell slots, and five optional talent points.
-- Shared casting, channeling, target selection, periodic effects, buffs, resources, stored charges, triggers and non-recursive damage links.
+- Shared casting, channeling, target selection, periodic effects, buffs, Astral charges, stored spell charges, triggers and non-recursive damage links.
 - An orb-based loadout picker and clustered/spread stationary target layouts.
 - Telegraphs for circle and lane ground impacts, plus damage-taken feedback.
-- Session and rolling DPS, damage totals, target state, cooldowns, stored charges and dynamic resource readiness cues.
+- Session and rolling DPS, damage totals, target state, cooldowns, stored spell charges and dynamic Astral charge readiness cues.
 - Pooled maintenance-DoT coverage across every live target from its first tick, with no application grace period.
 - Seeded deterministic simulation, pause/resume/stop, a session summary, and focus/visibility safety.
 - Keyboard and pointer controls, basic touch controls, and in-game Help.
+- Hover/keyboard-focus ability and talent tooltips, with compiled selected-talent values and current key labels; Help offers the same ability details for touch. No additional preferences are stored.
 - A Svelte 5 interface with a framework-independent combat simulation, built to static files with no account or persistent storage requirement. Optional spell keybindings are saved only in the current browser, with safe defaults if storage is unavailable.
 
 ## Planned direction — not implemented

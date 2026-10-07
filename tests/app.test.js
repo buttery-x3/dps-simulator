@@ -49,7 +49,7 @@ describe('Svelte parity', () => {
     expectNoStandaloneStatus();
     flushSync(() => app.configure({loadout: {abilities: ['gloam-thread', 'destructive-rift'], talents: {'gloam-thread': 'v2'}}}));
     const rift = document.querySelector('[data-spell="destructive-rift"]');
-    expect(rift.querySelector('.ability-state').textContent).toBe('0/3 void');
+    expect(rift.querySelector('.ability-state').textContent).toBe('0/3 Astral charges');
     expect(rift.classList.contains('is-locked')).toBe(true);
     flushSync(() => app.startSession()); expectNoStandaloneStatus();
     for (let resource = 1; resource <= 3; resource++) {
@@ -62,7 +62,7 @@ describe('Svelte parity', () => {
     expect(rift.classList.contains('is-ready')).toBe(true);
     flushSync(() => app.castSpell('destructive-rift')); app.sim.advance(1.5); update();
     expect(app.sim.resource.value).toBe(0);
-    expect(rift.querySelector('.ability-state').textContent).toBe('0/3 void');
+    expect(rift.querySelector('.ability-state').textContent).toBe('0/3 Astral charges');
     expect(rift.classList.contains('is-ready')).toBe(false);
     flushSync(() => app.pauseSession()); expectNoStandaloneStatus();
     flushSync(() => app.resumeSession()); expectNoStandaloneStatus();
@@ -308,7 +308,7 @@ describe('orb loadout configuration', () => {
     const ability = ABILITIES[0];
     abilityOption(ability.id).focus(); flushSync();
     expect($('help-loadout-detail').textContent).toContain(ability.name);
-    expect(abilityOption(ability.id).getAttribute('aria-describedby')).toBe('help-loadout-detail');
+    expect(abilityOption(ability.id).getAttribute('aria-describedby')).toMatch(/^ability-tooltip-/);
     const talent = ability.talents[0];
     talentOption(ability.id, talent.id).focus(); flushSync();
     expect($('help-loadout-detail').textContent).toContain(talent.name);

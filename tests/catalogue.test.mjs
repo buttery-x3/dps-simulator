@@ -40,6 +40,24 @@ for (const ability of ABILITIES) for (const talentId of [null, ...ability.talent
   });
 }
 
+test('player-facing catalogue uses Astral charges while preserving compatibility IDs and ability names', () => {
+  assert.equal(CATALOGUE.resource.id, 'void');
+  assert.equal(ABILITIES.find(ability => ability.id === 'lingering-glimmer').talents[0].name, 'Lingering Resource');
+  for (const ability of ABILITIES) for (const talentId of [null, ...ability.talents.map(talent => talent.id)]) {
+    const compiled = compileAbility(ability.id, talentId);
+    assert.doesNotMatch(`${compiled.name} ${compiled.description} ${compiled.type}`, /\bvoid\b/i);
+    const gains = [...compiled.effects, ...compiled.triggers.flatMap(trigger => trigger.effects)]
+      .some(effect => effect.type === 'resource' || effect.modifiers?.resourceGain);
+    if (gains || compiled.cost && ['base', 'v1', 'v2'].includes(talentId ?? 'base')) {
+      assert.match(compiled.description, /Astral charge/);
+    }
+    if (compiled.charges > 1) assert.match(compiled.type, /stored spell charges/);
+  }
+  const warning = validateLoadout({abilities: ['veil-bolt'], talents: {'veil-bolt': 'v3'}}).warnings.join(' ');
+  assert.match(warning, /generates Astral charges/);
+  assert.doesNotMatch(warning, /\bvoid\b/i);
+});
+
 test('source catalogue and default loadout are deeply frozen', () => {
   assert.ok(Object.isFrozen(CATALOGUE));
   assert.ok(Object.isFrozen(ABILITIES[0].talents[0].patch.effects[0]));
@@ -151,7 +169,7 @@ test('invalid loadout count, duplicate, unknown, extra key and unselected talent
 test('composition warnings never silently add a generator or sixth utility', () => {
   const spender = validateLoadout({abilities: ['destructive-rift']});
   assert.equal(spender.valid, true);
-  assert.match(spender.warnings.join(' '), /no resource generator/);
+  assert.match(spender.warnings.join(' '), /no Astral charge generator/);
   const balanced = validateLoadout({abilities: ['destructive-rift', 'gloam-thread'], talents: {'gloam-thread': 'v2'}});
   assert.deepEqual(balanced.warnings, []);
   const dependent = validateLoadout({abilities: ['lingering-glimmer'], talents: {'lingering-glimmer': 'v2'}});

@@ -61,7 +61,7 @@ export class RaidSim {
     this.cooldowns = Object.fromEntries(this.spells.map(s => [s.id, 0]));
     this.spellCharges = Object.fromEntries(this.spells.filter(s => s.charges > 1)
       .map(s => [s.id, {current: s.charges, max: s.charges, nextRecharge: 0}]));
-    this.resource = {value: 0, max: this.catalogue.resource.max, label: 'VOID'};
+    this.resource = {value: 0, max: this.catalogue.resource.max, label: 'Astral charges'};
     this.buffs = {}; this.links = []; this.hazards = []; this.effects = []; this.events = []; this.damageEvents = [];
     this.totalDamage = 0; this.damageTaken = 0; this.hitsTaken = 0; this.kills = 0; this.escaped = 0;
     this.interrupts = 0; this.wastedShards = 0; this.breakdown = {}; this.targetDamage = {}; this.castCounts = {};
@@ -69,7 +69,7 @@ export class RaidSim {
     this.nextWave = ticks(14); this.nextHazard = ticks(6); this.wave = 0; this.hazardCount = 0; this.eventId = 0; this.summary = null;
     this.notice = {text: this.loadoutWarnings[0] || 'Choose your rhythm. Keep damage rolling and dodge red ground marks.', kind: this.loadoutWarnings.length ? 'warn' : 'info', until: ticks(5)};
   }
-  // Shared resource alias retained for metrics adapters, never stored spell charges.
+  // Compatibility alias for shared Astral charges, never stored spell charges.
   get shards() { return this.resource.value; }
   set shards(value) { this.resource.value = clamp(Number.isFinite(value) ? value : 0, 0, this.resource.max); }
   rand() { let x = this.rngState; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.rngState = x >>> 0; return this.rngState / 4294967296; }
@@ -114,9 +114,9 @@ export class RaidSim {
     if (this.cast?.kind === 'cast') return 'Already casting';
     if ((this.input.x || this.input.y) && spell.activation.kind !== 'instant' && !spell.activation.moving) return 'Stand still to cast';
     const charges = this.spellCharges[id];
-    if (charges && charges.current < 1) return 'No stored charges ready';
+    if (charges && charges.current < 1) return 'No stored spell charges ready';
     if (!charges && this.tick < this.cooldowns[id]) return `${spell.name} is cooling down`;
-    if (spell.cost && this.resource.value < spell.cost.min) return `Requires ${spell.cost.min} void resource`;
+    if (spell.cost && this.resource.value < spell.cost.min) return `Requires ${spell.cost.min} Astral charge${spell.cost.min === 1 ? '' : 's'}`;
     if (spell.gcd * this.modifier('gcd') < 1 / HZ) return 'Effective global cooldown is below one simulation tick';
     if (spell.activation.kind === 'cast' && spell.activation.duration * this.modifier('castTime') < 1 / HZ) return 'Effective cast time is below one simulation tick';
     return null;

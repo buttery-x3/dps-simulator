@@ -6,6 +6,8 @@
   import {buildHud, num, duration} from './lib/hud.js';
   import {registerTrainingTools} from './lib/browser-tools.js';
   import SpellIcon from './components/SpellIcon.svelte';
+  import {describeAbility} from './lib/ability-details.js';
+  import {abilityTooltip} from './lib/ability-tooltip.js';
   import LoadoutPicker from './components/LoadoutPicker.svelte';
   import HelpDialog from './components/HelpDialog.svelte';
   import SummaryDialog from './components/SummaryDialog.svelte';
@@ -31,6 +33,7 @@
   let keybindingsOpen = $state(false);
   let bindings = $state([...DEFAULT_BINDINGS]);
   const keyLabels = $derived(bindings.map(keyLabel));
+  const abilityDetails = $derived(Object.fromEntries(catalogue.map(spell => [spell.id, describeAbility(spell, {key: keyLabels[settings.loadout.abilities.indexOf(spell.id)] ?? ''})])));
   let keybindingNotice = $state('');
   let summaryOpen = $state(false);
   let summary = $state.raw(null);
@@ -40,12 +43,7 @@
   let arenaFocused = $state(false);
   const active = $derived(['running', 'paused'].includes(view.phase));
   const stateLabel = $derived({ready: 'READY TO TRAIN', running: 'SESSION ACTIVE', paused: 'SESSION PAUSED', stopped: 'SESSION COMPLETE'}[view.phase]);
-  const detail = $derived.by(() => {
-    if (!selectedSpell) return null;
-    const ability = ABILITIES.find(ability => ability.id === selectedSpell);
-    const spell = ability ? compileAbility(ability.id, settings.loadout.talents[ability.id]) : null;
-    return spell ? {type: (spell.type ?? 'ABILITY').toUpperCase(), name: spell.name, text: spell.detail} : null;
-  });
+  const detail = $derived(settings.loadout.abilities.includes(selectedSpell) ? abilityDetails[selectedSpell] : null);
 
   export function renderHud() { view = buildHud(sim); }
   function later(callback, delay = 0) {
@@ -265,7 +263,7 @@
 
   <details class="preplay-setup" hidden={active} bind:open={loadoutOpen}>
     <summary><span class="setup-heading"><span class="setup-title">Your loadout</span><span class="setup-action">Customize</span></span><span class="setup-count">{settings.loadout.abilities.length}/5 abilities · {talentPoints} talent point{talentPoints === 1 ? '' : 's'} available</span></summary>
-    {#if loadoutOpen}<LoadoutPicker abilities={catalogue} loadout={settings.loadout} keys={keyLabels} warnings={loadoutValidation.warnings} idPrefix="preplay-loadout" onchange={loadout => updateSettings({loadout})} />{/if}
+    {#if loadoutOpen}<LoadoutPicker tooltipsEnabled={!helpOpen && !summaryOpen && !keybindingsOpen} abilities={catalogue} loadout={settings.loadout} keys={keyLabels} warnings={loadoutValidation.warnings} idPrefix="preplay-loadout" onchange={loadout => updateSettings({loadout})} />{/if}
   </details>
   <div class="workspace">
     <section bind:this={combatPanel} class="combat-panel" aria-label="Combat arena">
@@ -286,7 +284,7 @@
       </div>
       <div class="ability-deck" id="abilityDeck" aria-label="Spells">
         {#each (active || loadoutValidation.valid ? view.abilities : []) as spell (spell.id)}
-          <button type="button" class="ability" class:is-locked={spell.state.locked} class:is-proc={spell.state.ready === 'charges'} class:is-ready={spell.state.ready === 'resource'} class:is-queued={spell.queued} class:is-used={used[spell.id]} style:--spell-color={spell.color} data-spell={spell.id} aria-label={`${spell.key}. ${spell.name}. ${spell.label}`} onpointerdown={event => event.preventDefault()} onclick={() => { castSpell(spell.id); focusArena(); }} onpointerenter={() => { selectedSpell = spell.id; }} onfocus={() => { selectedSpell = spell.id; }}>
+          <button type="button" class="ability" class:is-locked={spell.state.locked} class:is-proc={spell.state.ready === 'charges'} class:is-ready={spell.state.ready === 'resource'} class:is-queued={spell.queued} class:is-used={used[spell.id]} style:--spell-color={spell.color} data-spell={spell.id} use:abilityTooltip={{detail: abilityDetails[spell.id], disabled: helpOpen || summaryOpen || keybindingsOpen, revision: view.phase}} aria-label={`${spell.key}. ${spell.name}. ${spell.label}`} onpointerdown={event => event.preventDefault()} onclick={() => { selectedSpell = spell.id; castSpell(spell.id); focusArena(); }} onpointerenter={() => { selectedSpell = spell.id; }} onfocus={() => { selectedSpell = spell.id; }}>
             <SpellIcon id={spell.icon} class="ability-icon" state={{...spell.state, key: spell.key}} />
             <span class="ability-name">{spell.name}</span><span class="ability-state">{spell.label}</span>
           </button>

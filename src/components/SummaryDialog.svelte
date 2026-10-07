@@ -48,7 +48,7 @@
       {#each summary.coverageDetails ?? [] as coverage (coverage.id)}
         <div class="summary-detail coverage-detail" data-coverage={coverage.id}><span>{coverage.name}</span><strong>{Math.round(coverage.ratio * 100)}%</strong></div>
       {/each}
-      <div class="summary-detail"><span>Movement interrupts / void overcapped</span><strong>{summary.interrupts} / {summary.wastedShards}</strong></div>
+      <div class="summary-detail"><span>Movement interrupts / Astral charges overcapped</span><strong>{summary.interrupts} / {summary.wastedShards}</strong></div>
       <div class="summary-breakdown">
         <h3>Damage by spell</h3>
         {#each rows as [id, damage] (id)}

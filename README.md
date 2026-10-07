@@ -1,6 +1,6 @@
 # VEILWEAVER
 
-A Svelte browser arena for practicing ranged damage while dodging. Choose a rotation, keep damage-over-time effects rolling, commit to casts and channels, and move out of floor telegraphs.
+A Svelte browser arena for practicing ranged damage while dodging. Choose a rotation, keep damage-over-time effects rolling, commit to casts and channels, and move out of floor telegraphs. A Veilweaver expands their mind to understand reality, then weaves the veil’s astral threads into the world to reshape it and deal damage.
 
 ## Quick start
 
@@ -26,7 +26,7 @@ Start immediately with five base abilities, or open **Customize loadout** before
 - Choose clustered or spread stationary echoes to compare area attacks and chain bounces.
 - Setup is locked during an active or paused run. Stop first; the completed summary stays frozen until the next session.
 
-The default selects Veil Bolt, Lingering Glimmer, Gloam Thread, Astral Flare and Area Pulse, with all five talent points unspent. Destructive Rift, Chain Strike and Focused Energy are available in the catalogue. Rift is intentionally the only resource spender; generation comes from talents. Shared void resource and an ability's stored charges are separate systems.
+The default selects Veil Bolt, Lingering Glimmer, Gloam Thread, Astral Flare and Area Pulse, with all five talent points unspent. Destructive Rift, Chain Strike and Focused Energy are available in the catalogue. Rift is intentionally the only Astral charge spender; generation comes from talents. Shared **Astral charges** are capped at three and start at zero. An ability’s **stored spell charges** are a separate pool of uses that recharge over time; they never pay an Astral charge cost.
 
 The 8 abilities and 24 talents are provisional prototype tuning, not a balanced class or historical simulation. See [the spell-system contract and tuning](docs/SPELL_SYSTEM.md).
 
@@ -39,9 +39,18 @@ The 8 abilities and 24 talents are provisional prototype tuning, not a balanced 
 - **Help:** controls, loadout, setup, exact metric definitions. Opening Help pauses; closing leaves the run paused unless you choose **Close and resume**.
 - **Stop:** preserve a summary. Start a new session when ready.
 
-Instant spells work while moving. Ordinary casts and channels require stillness; Drifting Flare is a moving cast. Moving, losing a target, or clipping a channel stops future ticks. Gloam Storm commits its cooldown at channel start even when interrupted. Full Conduit grants resource only after a complete Gloam Thread channel, including a lethal final tick.
+Instant spells work while moving. Ordinary casts and channels require stillness; Drifting Flare is a moving cast. Moving, losing a target, or clipping a channel stops future ticks. Gloam Storm commits its cooldown at channel start even when interrupted. Full Conduit grants an Astral charge only after a complete Gloam Thread channel, including a lethal final tick.
 
 The sentinel never dies. Two stationary echoes arrive at 14 seconds and every 30 seconds afterward, up to four live echoes. Each fades after 40 seconds. Circles and lanes telegraph ground impacts; a hit adds 1,000 damage taken without ending the session. There is no victory condition or enemy AI. Touch movement and targeting are included; desktop keyboard play remains primary.
+
+## Ability tooltips and details
+
+Hover or keyboard-focus an action-bar ability, a loadout ability orb, or a talent orb to read its details. Action-bar and ability-orb details describe the effective selected talent; a talent orb previews its own variant. Current physical-key labels follow the slot’s saved binding.
+
+- Details explain activation and movement, timing, targeting, damage and effects, Astral charge costs/gains, and separate stored spell charges when applicable.
+- Escape dismisses an open tooltip. Moving away or moving keyboard focus away also dismisses it. Scrolling or resizing dismisses it; placement is clamped to the viewport while open.
+- For touch, open **Help → Ability details** and choose an equipped ability to read the same information without hovering or triggering a cast.
+- The generic `src/lib/ability-details.js` model reads the compiled ability’s numbers and mechanics, including the selected talent. It does not maintain a duplicated per-spell mechanics table. Tooltips add no saved preferences or storage keys.
 
 ## Customize spell keybindings
 
@@ -57,7 +66,9 @@ Open **Keybindings** in the header or **Customize spell keys** in Help. Select a
 
 ## Extensible spell definitions
 
-`src/lib/catalogue.js` contains a versioned, JSON-compatible catalogue, talent patches, strict validation and a compiler. `effect-handlers.js` supplies reusable damage, periodic damage, buffs, resource gains, cooldown/charge resets, DoT refresh and damage-link effects. `engine.js` supplies shared cast/channel timing, targeting, triggers and deterministic simulation. It contains no ability-ID-specific execution branches.
+`src/lib/catalogue.js` contains a versioned, JSON-compatible catalogue, talent patches, strict validation and a compiler. `effect-handlers.js` supplies reusable damage, periodic damage, buffs, Astral charge gains, cooldown/stored-spell-charge resets, DoT refresh and damage-link effects. `engine.js` supplies shared cast/channel timing, targeting, triggers and deterministic simulation. It contains no ability-ID-specific execution branches.
+
+The user-facing shared resource is Astral charges. For compatibility, `catalogue.resource.id` remains `void`; the `shards` alias exposes the current Astral charge count, and `wastedShards` counts Astral charges lost to overcap. These internal identifiers are not separate resources and are not displayed as resource names.
 
 A new spell or talent composed from the supported mechanics is a data change. [The data-only example](docs/examples/new-spell.json) demonstrates this. A genuinely new mechanic needs one reusable handler plus schema validation and tests. Arbitrary embedded scripts are not accepted. The draft Ability Workshop export is design input, not the runtime schema; the existing Workshop is unchanged.
 
@@ -82,13 +93,13 @@ npm run verify
 
 This runs Svelte diagnostics, core catalogue/engine/readability tests, compiled Svelte component integration/layout tests, and a production build. Individual commands: `npm run check`, `npm run test:core`, `npm run test:ui`, `npm run build`.
 
-Tests exercise all 32 base/talent forms, interaction boundaries, schema failures, data-only extension, deterministic timers, charge/resource separation, no-recursion links, cast/channel interruptions, DoT coverage, exact DPS, seed replay, hazards, loadout selection, default/custom keyboard mapping, capture/cancel/conflicts/reset, persistence/storage failure, Help/summary/focus/touch flows, teardown and native Canvas rendering. There is no hosted CI workflow.
+Tests exercise all 32 base/talent forms, interaction boundaries, schema failures, data-only extension, deterministic timers, stored-spell-charge/Astral-charge separation, no-recursion links, cast/channel interruptions, DoT coverage, exact DPS, seed replay, hazards, loadout selection, default/custom keyboard mapping, capture/cancel/conflicts/reset, persistence/storage failure, Help/summary/focus/touch flows, teardown and native Canvas rendering. There is no hosted CI workflow.
 
 ### Verification limits
 
-Compiled component tests use Happy DOM with native Canvas; they do not establish real-browser layout, live combat feel or touch-device behavior. Real-browser launch is unavailable in the current execution environment. Before merging or publishing, smoke-test the branch in a target browser: loadout/orb selection, reorder, key capture/Save/Cancel/Escape/Tab/reset, browser reload persistence, long key labels, start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, desktop viewport heights and mobile layout. WebMCP registration is tested with a mock, not a live browser implementation.
+Compiled component tests use Happy DOM with native Canvas; they do not establish real-browser layout, live combat feel or touch-device behavior. Before merging or publishing, smoke-test the branch in a target browser: loadout/orb selection, effective base/talent tooltips on hover and keyboard focus, tooltip Escape/scroll/resize dismissal and viewport clamping, touch Help ability details, reorder, key capture/Save/Cancel/Escape/Tab/reset, browser reload persistence, long key labels, start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, desktop viewport heights and mobile layout. WebMCP registration is tested with a mock, not a live browser implementation.
 
-The viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This keybindings branch was created directly from the last verified `feature/extensible-spell-catalogue` tip (`dcdb23aab80ea0165f09b5a765bee9ad134c5348`), preserving its spell catalogue and UI improvements. The source branch had been removed by the time this task started; the exact feature commit was verified on GitHub. This work does not merge or deploy any branch.
+The viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This ability-tooltips and Astral-wording branch is based on `feature/custom-keybindings` at `ac00812fe2c14e90775834ce06b133cf674549b0`, preserving its spell catalogue, custom slot keys and UI improvements. This work does not merge or deploy any branch.
 
 ## Build and preview
 
@@ -109,6 +120,7 @@ src/components/KeybindingsDialog.svelte  Draft key capture, cancel and reset
 src/lib/keybindings.js          Physical-key validation and local preferences
 src/components/SummaryDialog.svelte  Frozen results
 src/lib/catalogue.js            Canonical data, validation, patches and compiler
+src/lib/ability-details.js      Compiled-ability tooltip/detail projection
 src/lib/effect-handlers.js      Reusable effect handlers
 src/lib/engine.js               Deterministic combat and encounter scaffold
 src/lib/hud.js                  Pure simulation-to-UI projection

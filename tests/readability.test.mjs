@@ -219,7 +219,7 @@ test('shared resource readiness follows the resolved spender cost and consumptio
   assert.equal(spellReadiness(flexible, 'veil-bolt').locked, true);
 });
 
-test('stored spell charges and serial recharge are separate from shared VOID', () => {
+test('stored spell charges and serial recharge are separate from shared Astral charges', () => {
   const sim = fresh(loadout(['astral-flare', 'destructive-rift'], {'astral-flare': 'v3'}));
   sim.resource.value = 2;
   assert.equal(spellReadiness(sim, 'astral-flare').ready, 'charges');
@@ -278,10 +278,10 @@ test('real clock drawing uses numeric labels, remaining sectors and remapped key
 test('HUD derives generator, spender, charge, buff and ability labels from selected definitions', () => {
   const sim = fresh(loadout(['gloam-thread', 'destructive-rift', 'astral-flare', 'focused-energy'], {'gloam-thread': 'v2', 'astral-flare': 'v3'}));
   let view = buildHud(sim);
-  assert.deepEqual(view.resource, {value: 0, max: 3, label: 'VOID', hasGenerator: true, hasSpender: true});
+  assert.deepEqual(view.resource, {value: 0, max: 3, label: 'Astral charges', hasGenerator: true, hasSpender: true});
   assert.equal(Object.hasOwn(view, 'proc'), false);
   assert.deepEqual(view.abilities.map(spell => spell.id), sim.spells.map(spell => spell.id));
-  assert.match(view.abilities[2].label, /3\/3 charges/);
+  assert.match(view.abilities[2].label, /3\/3 stored charges/);
   sim.use('focused-energy'); view = buildHud(sim);
   assert.equal(view.buffs[0].name, 'Focused Energy'); assert.equal(view.buffs[0].seconds, 15);
   const multiplier = fresh(loadout(['focused-energy'], {'focused-energy': 'v3'}));
@@ -448,4 +448,13 @@ test('hostile circle and lane warning colors are red, while target and friendly 
   sim.tick += HZ / 4;
   renderer.magic(context, sim);
   assert.ok(colors.some(color => String(color).startsWith('#bc9dff')), 'friendly area spell retains its ability color');
+});
+
+test('HUD falls back to Astral charges and distinguishes stored spell readiness', () => {
+  const sim = new RaidSim({mechanics: false, loadout: {abilities: ['destructive-rift', 'astral-flare'], talents: {'astral-flare': 'v3'}}});
+  sim.resource.label = '';
+  const view = buildHud(sim);
+  assert.equal(view.resource.label, 'Astral charges');
+  assert.equal(view.abilities[0].label, '0/3 Astral charges');
+  assert.match(view.abilities[1].label, /3\/3 stored charges/);
 });

@@ -31,7 +31,7 @@ export function buildHud(sim) {
   const resource = {
     value: sim.resource?.value ?? 0,
     max: sim.resource?.max ?? 3,
-    label: sim.resource?.label || 'VOID',
+    label: sim.resource?.label || 'Astral charges',
     hasGenerator: spells.some(spell => allEffects(spell).some(effect => effect.type === 'resource' && effect.amount > 0)),
     hasSpender: spells.some(spell => Boolean(spell.cost)),
   };
@@ -39,11 +39,11 @@ export function buildHud(sim) {
     const state = spellReadiness(sim, spell.id);
     let label;
     if (state.storedCharges) {
-      label = `${state.charges}/${state.maxCharges} charges`;
+      label = `${state.charges}/${state.maxCharges} stored charges`;
       if (state.recharge > 0) label += ` · +1 in ${state.recharge.toFixed(1)}s`;
-      if (state.resourceLocked) label += ` · ${resource.value}/${state.resourceRequired} ${resource.label.toLowerCase()}`;
+      if (state.resourceLocked) label += ` · ${resource.value}/${state.resourceRequired} ${resource.label}`;
     } else if (state.cooldown > 0) label = `Cooldown ${state.cooldown.toFixed(1)}s`;
-    else if (spell.cost) label = state.ready === 'resource' ? 'READY' : `${resource.value}/${state.resourceRequired} ${resource.label.toLowerCase()}`;
+    else if (spell.cost) label = state.ready === 'resource' ? 'READY' : `${resource.value}/${state.resourceRequired} ${resource.label}`;
     else label = activationLabel(spell);
     return {...spell, icon: spell.icon || spell.id, state, label, queued: sim.queue?.id === spell.id};
   });
