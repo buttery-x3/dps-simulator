@@ -91,3 +91,21 @@ describe('arena resizing and letterboxed pointer mapping', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 });
+
+describe('loadout layout and interaction styling contracts', () => {
+  test('setup is an opt-in flowing section and never adds a viewport subtraction', () => {
+    expect(styles).toContain('.preplay-setup{flex:none;');
+    expect(styles).toContain('.loadout-catalogue{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))');
+    expect(styles).toContain('.preplay-setup .loadout-catalogue{grid-template-columns:repeat(8,minmax(0,1fr))}');
+    expect(styles).not.toMatch(/height:\s*calc\(100(?:d)?vh/);
+  });
+  test('large ability circles and smaller connected talent circles retain selection and focus affordances', () => {
+    expect(styles).toMatch(/\.ability-orb\{[^}]*width:84px;[^}]*height:84px;[^}]*border-radius:50%/);
+    expect(styles).toMatch(/\.talent-orb\{[^}]*border-radius:50%;[^}]*width:31px;[^}]*height:31px/);
+    expect(styles).toContain('.talent-branches::before');
+    expect(styles).toContain('.talent-branches::after');
+    expect(styles).toContain('.ability-orb.selected');
+    expect(styles).toContain('.talent-orb.selected');
+    expect(styles).toContain('button:focus-visible');
+  });
+});

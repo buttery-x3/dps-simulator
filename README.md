@@ -1,19 +1,82 @@
 # VEILWEAVER
 
-A Svelte browser game for practicing ranged DPS while dodging. Open the arena, keep DoTs rolling, weave instant procs, and move out of floor telegraphs.
-
-This is a parity port of the working practice arena to **Svelte 5 + Vite**. The combat simulation, Canvas renderer, spell icons, and visual stylesheet are preserved. Svelte owns the HUD, controls, Help, setup, session summary, and mount/unmount lifecycle. There is no server-side rendering, account system, analytics, persistence, or game backend.
+A Svelte browser arena for practicing ranged damage while dodging. Choose a rotation, keep damage-over-time effects rolling, commit to casts and channels, and move out of floor telegraphs.
 
 ## Quick start
 
-Use **Node.js 22.12 or newer** and npm. From this folder:
+Use **Node.js 22.12 or newer** and npm:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open the local address printed by Vite, usually <http://127.0.0.1:5173>. Stop the server with Ctrl+C. `npm start` is an alias for the development command. The default server binds only to this computer.
+Open the local address printed by Vite (usually <http://127.0.0.1:5173>). The default server binds to this computer. `npm start` is an alias. There is no backend, account, analytics, or persistent storage.
+
+## Choose a loadout
+
+Start immediately with five base abilities, or open **Customize loadout** before starting. The same controls are in Help.
+
+- Eight large ability orbs, each with three connected talent orbs.
+- Select one to five abilities, with five selected by default.
+- Five available talent points. Each selected ability can have zero or one talent; no stacking and no requirement to spend every point.
+- The five ordered slots assign **Q / E / R / 4 / 5**. Use slot arrows to rearrange them.
+- Focus or hover an orb for its description. Click a selected talent again to remove it. Native buttons support keyboard selection.
+- A warning explains a spender without a generator. The loadout remains legal for experimentation.
+- Choose clustered or spread stationary echoes to compare area attacks and chain bounces.
+- Setup is locked during an active or paused run. Stop first; the completed summary stays frozen until the next session.
+
+The default selects Veil Bolt, Lingering Glimmer, Gloam Thread, Astral Flare and Area Pulse, with all five talent points unspent. Destructive Rift, Chain Strike and Focused Energy are available in the catalogue. Rift is intentionally the only resource spender; generation comes from talents. Shared void resource and an ability's stored charges are separate systems.
+
+The 8 abilities and 24 talents are provisional prototype tuning, not a balanced class or historical simulation. See [the spell-system contract and tuning](docs/SPELL_SYSTEM.md).
+
+## Play
+
+- **WASD:** move.
+- **Tab or click:** select a target.
+- **Q / E / R / 4 / 5:** use the ability assigned to that slot.
+- **P:** pause/resume. **Escape:** pause and release arena keyboard focus.
+- **Help:** controls, loadout, setup, exact metric definitions. Opening Help pauses; closing leaves the run paused unless you choose **Close and resume**.
+- **Stop:** preserve a summary. Start a new session when ready.
+
+Instant spells work while moving. Ordinary casts and channels require stillness; Drifting Flare is a moving cast. Moving, losing a target, or clipping a channel stops future ticks. Gloam Storm commits its cooldown at channel start even when interrupted. Full Conduit grants resource only after a complete Gloam Thread channel, including a lethal final tick.
+
+The sentinel never dies. Two stationary echoes arrive at 14 seconds and every 30 seconds afterward, up to four live echoes. Each fades after 40 seconds. Circles and lanes telegraph ground impacts; a hit adds 1,000 damage taken without ending the session. There is no victory condition or enemy AI. Touch movement and targeting are included; desktop keyboard play remains primary.
+
+## Extensible spell definitions
+
+`src/lib/catalogue.js` contains a versioned, JSON-compatible catalogue, talent patches, strict validation and a compiler. `effect-handlers.js` supplies reusable damage, periodic damage, buffs, resource gains, cooldown/charge resets, DoT refresh and damage-link effects. `engine.js` supplies shared cast/channel timing, targeting, triggers and deterministic simulation. It contains no ability-ID-specific execution branches.
+
+A new spell or talent composed from the supported mechanics is a data change. [The data-only example](docs/examples/new-spell.json) demonstrates this. A genuinely new mechanic needs one reusable handler plus schema validation and tests. Arbitrary embedded scripts are not accepted. The draft Ability Workshop export is design input, not the runtime schema; the existing Workshop is unchanged.
+
+Future Play/Create editing can use the canonical schema and compiler. An encounter editor, tutorial campaign, sixth utility slot, authentication, backend and leaderboards are outside this implementation.
+
+## Clock and metrics
+
+The simulation uses a 60 Hz integer clock and seeded randomness. Hidden tabs, unfocused windows and frames stalled more than 250 ms pause and clear movement. No paused or missed wall-clock time is fabricated on resume.
+
+- Session DPS = exact total damage / simulated active seconds.
+- Rolling DPS = damage in `(now - 15s, now]` / `min(15, active seconds)`. Damage at time zero leaves the rolling window at exactly 15 seconds.
+- Overkill is excluded. Display rounding does not change stored totals or time.
+- **DoT coverage** replaces the former single-Sorrowbrand coverage label. It pools covered ticks / available ticks for every selected maintenance DoT and every living target. Glimmer and the Lingering Touch talent are maintenance DoTs; short spender/AoE DoTs are not maintenance objectives.
+- Every target contributes from its first live tick, including initial application delays and newly spawned echoes. There is no grace period, excluded add time, or post-hoc denominator reduction. Each DoT receives the same live-target denominator; missing one lowers pooled coverage. With no maintenance DoT selected, the metric is N/A.
+- A stopped summary preserves exact totals, seed, loadout/talents and coverage until a new session. Reloading the page clears results and setup.
+
+## Verify
+
+```sh
+npm run verify
+```
+
+This runs Svelte diagnostics, core catalogue/engine/readability tests, compiled Svelte component integration/layout tests, and a production build. Individual commands: `npm run check`, `npm run test:core`, `npm run test:ui`, `npm run build`.
+
+Tests exercise all 32 base/talent forms, interaction boundaries, schema failures, data-only extension, deterministic timers, charge/resource separation, no-recursion links, cast/channel interruptions, DoT coverage, exact DPS, seed replay, hazards, loadout selection, keyboard mapping, Help/summary/focus/touch flows, teardown and native Canvas rendering. There is no hosted CI workflow.
+
+### Verification limits
+
+Compiled component tests use Happy DOM with native Canvas; they do not establish real-browser layout, live combat feel or touch-device behavior. Real-browser launch is unavailable in the current execution environment. Before merging or publishing, smoke-test the branch in a target browser: loadout/orb selection, reorder, start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, desktop viewport heights and mobile layout. WebMCP registration is tested with a mock, not a live browser implementation.
+
+The unmerged viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This feature branch is based on `fix/arena-viewport-height` (`c31b0bd`), one commit ahead of main at `9ea85a1`. It does not merge or deploy either branch.
 
 ## Build and preview
 
@@ -22,95 +85,22 @@ npm run build
 npm run preview
 ```
 
-Preview the production build at the printed local address, usually <http://127.0.0.1:4173>. Deploy the contents of `dist/` to any static host. The build uses relative asset URLs so it can live at a domain root or under a subdirectory. No Node.js process is needed on the production host. Opening the HTML directly as a `file://` URL is not supported.
-
-The ZIP contains source and a dependency lockfile. It intentionally excludes installed dependencies and generated build output; the commands above reproduce them.
-
-## Play
-
-Start a session and click the arena to give it keyboard focus.
-
-- **WASD:** move.
-- **Tab or click:** select a target.
-- **Q — Sorrowbrand:** instant 18-second DoT. Refresh in its final 5.4 seconds to carry remaining duration.
-- **E — Nightglass:** stationary 1.5-second cast, 8-second cooldown starting when the cast completes, generates one void shard.
-- **R — Gloam Thread:** stationary filler channel, four ticks over three seconds. Moving or casting another spell interrupts the remaining channel.
-- **4 — Wraithbolt:** instant proc usable while moving. Two charges maximum, expiring after 12 seconds.
-- **5 — Devouring Rift / Umbral Bloom:** three-shard spender; choose the loadout before starting.
-- **P:** pause or resume. **Escape:** pause and release arena keyboard focus.
-- **? Help:** spellbook, setup, and controls. Opening Help pauses an active session. Closing normally leaves it paused; **Close and resume** resumes explicitly.
-
-The sentinel never dies. Two stationary echoes arrive at 14 seconds and every 30 seconds afterward, up to four live echoes. Each fades after 40 seconds. Circles and lanes telegraph ground impacts; a hit adds 1,000 damage taken without ending the session. This is an endless practice arena with no levels or victory condition.
-
-Touch movement and target controls are included. Desktop keyboard play is the primary experience.
-
-## Verify
-
-```sh
-npm run verify
-```
-
-This runs Svelte diagnostics, engine/readability tests, compiled Svelte component integration tests, and a production build. Individual commands:
-
-```sh
-npm run check
-npm run test:core
-npm run test:ui
-npm test
-npm run build
-```
-
-The 23 dependency-free engine/readability tests cover combat timing, queueing, cast interruption, DoTs, procs, resource spenders, adds, telegraphs, exact DPS accounting, deterministic seeds, key/icon agreement, readiness thresholds, and starting composition. The Svelte integration suite exercises the actual compiled components in Happy DOM with native Canvas drawing: controls, target cards, settings, Help/summary flows, touch releases, real-time frame handling, optional browser tools, and teardown. The layout suite guards the desktop CSS sizing contracts and checks canvas resizing and letterboxed pointer mapping at multiple aspect ratios. These source and geometry checks do not measure browser layout. No hosted CI workflow is configured.
-
-### Verification limits
-
-Mocked-DOM tests do not replace a real browser or device. Full browser layout, live play feel, touch-device behavior, and WebMCP support have not been validated in a real browser for this port. Before publishing, smoke-test start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, and your intended screen sizes in the target browser.
+The static production output is `dist/`; relative asset URLs support a domain root or subdirectory. The source excludes installed dependencies and generated output. Opening HTML directly with `file://` is unsupported.
 
 ## Project layout
 
 ```text
-src/
-  App.svelte                  Session orchestration, reactive HUD, input
-  main.js                     Svelte mount and global stylesheet
-  styles.css                  Preserved responsive HUD and visual design
-  components/
-    SpellIcon.svelte          Shared Canvas spell-icon component
-    HelpDialog.svelte         Setup, spellbook, help, pause/resume controls
-    SummaryDialog.svelte      Preserved session metrics and breakdown
-  lib/
-    engine.js                 DOM-free deterministic combat simulation
-    renderer.js               Canvas arena and coordinate mapping
-    icons.js                  Shared spell sigils and readiness calculations
-    hud.js                    Pure simulation-to-HUD projection
-    browser-tools.js          Optional WebMCP registration and cleanup
-tests/
-  engine.test.mjs             Combat regression tests
-  readability.test.mjs        Key, icon, clock, and readiness regression tests
-  app.test.js                 Compiled Svelte integration tests
-  layout.test.js              Viewport CSS contracts and canvas geometry tests
-  setup.js                    Test-only DOM/Canvas adapters
-docs/PRODUCT.md               Implemented scope and planned direction
+src/App.svelte                  Session lifecycle, inputs and reactive HUD
+src/components/LoadoutPicker.svelte  Orb/talent selection and ordered slots
+src/components/HelpDialog.svelte     Help and setup
+src/components/SummaryDialog.svelte  Frozen results
+src/lib/catalogue.js            Canonical data, validation, patches and compiler
+src/lib/effect-handlers.js      Reusable effect handlers
+src/lib/engine.js               Deterministic combat and encounter scaffold
+src/lib/hud.js                  Pure simulation-to-UI projection
+src/lib/icons.js                Sigils and readiness clocks
+src/lib/renderer.js             Canvas arena and coordinate mapping
+src/lib/browser-tools.js        Optional browser-tool registration
 ```
 
-`RaidSim` stays mutable and framework-independent. The app derives fresh HUD projections rather than proxying the simulation through framework state. The animation loop advances the simulation using elapsed frame time and refreshes both arena and icon visuals. Svelte lifecycle cleanup cancels animation callbacks, pending UI timers, movement input, and browser-tool registrations on unmount.
-
-## Clock and metrics
-
-The simulation uses a 60 Hz integer clock and seeded randomness. Hidden tabs and unfocused windows pause automatically and clear movement keys. Frames stalled longer than 250 ms pause rather than catching up. Resuming never fabricates active time.
-
-- Session DPS = total damage / simulated active seconds.
-- Rolling DPS = damage in `(now - 15s, now]` / `min(15, active seconds)`.
-- Damage at time zero leaves the rolling window at exactly 15 seconds.
-- Overkill is excluded. Display rounding does not change exact stored totals or time.
-- Brand coverage pools all live-target time, including the permanent dummy and each echo.
-- A stopped summary retains the exact totals, elapsed time, seed, and loadout until the next session. Results are not saved across page reloads.
-
-## Optional browser tools
-
-The app feature-detects WebMCP. Eight optional tools expose session read/start/pause/resume/stop, setup, target selection, and one spell attempt through the same actions as the UI. Unsupported browsers simply skip registration. There is no tool for fast-forwarding, fabricating damage, or automating movement. The test registry is mocked; it does not establish real-browser WebMCP compatibility.
-
-## Product direction
-
-See [docs/PRODUCT.md](docs/PRODUCT.md). Encounter design, moving projectiles, rally zones, configurable AoE, user-created encounter links, and leaderboards are future ideas, not implemented features in this port.
-
-Framework reference: [Svelte documentation](https://svelte.dev/docs/svelte/overview) and [Vite documentation](https://vite.dev/guide/).
+Optional WebMCP tools read/start/pause/resume/stop sessions, configure validated setup, select a target and attempt one equipped spell through the same actions as the UI. Unsupported browsers skip registration. No tool fast-forwards time, fabricates damage or automates movement. Registrations, animation callbacks, timers and movement state are cleaned up on unmount.
