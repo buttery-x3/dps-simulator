@@ -60,7 +60,7 @@ npm test
 npm run build
 ```
 
-The 23 dependency-free engine/readability tests cover combat timing, queueing, cast interruption, DoTs, procs, resource spenders, adds, telegraphs, exact DPS accounting, deterministic seeds, key/icon agreement, readiness thresholds, and starting composition. The Svelte integration suite exercises the actual compiled components in Happy DOM with native Canvas drawing: controls, target cards, settings, Help/summary flows, touch releases, real-time frame handling, optional browser tools, and teardown. No hosted CI workflow is configured.
+The 23 dependency-free engine/readability tests cover combat timing, queueing, cast interruption, DoTs, procs, resource spenders, adds, telegraphs, exact DPS accounting, deterministic seeds, key/icon agreement, readiness thresholds, and starting composition. The Svelte integration suite exercises the actual compiled components in Happy DOM with native Canvas drawing: controls, target cards, settings, Help/summary flows, touch releases, real-time frame handling, optional browser tools, and teardown. The layout suite guards the desktop CSS sizing contracts and checks canvas resizing and letterboxed pointer mapping at multiple aspect ratios. These source and geometry checks do not measure browser layout. No hosted CI workflow is configured.
 
 ### Verification limits
 
@@ -87,6 +87,7 @@ tests/
   engine.test.mjs             Combat regression tests
   readability.test.mjs        Key, icon, clock, and readiness regression tests
   app.test.js                 Compiled Svelte integration tests
+  layout.test.js              Viewport CSS contracts and canvas geometry tests
   setup.js                    Test-only DOM/Canvas adapters
 docs/PRODUCT.md               Implemented scope and planned direction
 ```
