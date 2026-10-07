@@ -32,6 +32,21 @@ describe('Svelte parity', () => {
     expect(app.sim.player.y).toBe(445);
     expect(app.sim.targets[0].y).toBe(160);
   });
+  test('keeps the removed tip element absent through sessions while preserving void shards', () => {
+    const expectNoTip = () => {
+      expect($('notice')).toBeNull();
+      expect(document.body.textContent).not.toContain('Keep your DoT on every target. Save instant casts for movement.');
+      expect(document.querySelectorAll('.shards i')).toHaveLength(3);
+    };
+    expectNoTip();
+    flushSync(() => app.startSession()); expectNoTip();
+    flushSync(() => app.castSpell('spend')); expectNoTip();
+    app.sim.shards = 3; update();
+    expect(document.querySelectorAll('.shards i.filled')).toHaveLength(3);
+    flushSync(() => app.stopSession());
+    click('restartBtn'); expectNoTip();
+    expect(document.querySelectorAll('.shards i.filled')).toHaveLength(0);
+  });
   test('start/cast/pause/resume/stop/restart controls use exact engine state', async () => {
     click('startBtn'); await tick();
     expect(app.sim.phase).toBe('running'); expect($('overlay').hidden).toBe(true);
