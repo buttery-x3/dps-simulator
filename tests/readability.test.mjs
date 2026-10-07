@@ -122,7 +122,7 @@ test('paused rebinding changes only slot labels, preserving a cast and combat st
     cooldowns: sim.cooldowns, charges: sim.spellCharges, resource: sim.resource, events: sim.events,
     targets: sim.targets, damage: sim.totalDamage, loadout: sim.loadout}), state);
   sim.resume(); sim.advance(1.1);
-  assert.equal(sim.totalDamage, 640); assert.equal(sim.cast, null);
+  assert.equal(sim.totalDamage, 1150); assert.equal(sim.cast, null);
   assert.equal(sim.spells[0].key, 'Q');
 });
 
@@ -263,6 +263,27 @@ test('cooldown, captured GCD duration and pause remain independent', () => {
   sim.advance(.4); const before = spellReadiness(sim, 'astral-flare');
   sim.pause(); sim.advance(100); assert.deepEqual(spellReadiness(sim, 'astral-flare'), before);
   sim.resume(); sim.advance(7.6); assert.equal(spellReadiness(sim, 'astral-flare').cooldown, 0);
+});
+
+test('Veil cooldown clocks follow the new base and inherited variants while Light Veil stays ready', () => {
+  for (const talent of [null, 'v1', 'v2', 'v3']) {
+    const sim = fresh(loadout(['veil-bolt'], talent ? {'veil-bolt': talent} : {}));
+    const cooldown = talent === 'v1' ? 0 : 6;
+    assert.equal(spellReadiness(sim, 'veil-bolt').cooldownMax, cooldown);
+    sim.use('veil-bolt'); sim.advance(1.5);
+    const state = spellReadiness(sim, 'veil-bolt');
+    assert.equal(state.cooldown, cooldown);
+    assert.equal(state.gcd, 0);
+    const {context, words} = recordingContext(80, 80);
+    drawSpellIcon(context, 'veil-bolt', 0, 0, 80, state);
+    assert.equal(words.includes('CD'), cooldown > 0);
+    assert.equal(words.includes('6.0'), cooldown > 0);
+    const view = buildHud(sim).abilities[0];
+    assert.equal(view.cooldown, cooldown);
+    sim.advance(6);
+    assert.equal(spellReadiness(sim, 'veil-bolt').cooldown, 0);
+    assert.equal(sim.canCast('veil-bolt'), null);
+  }
 });
 
 test('real clock drawing uses numeric labels, remaining sectors and remapped keys', () => {

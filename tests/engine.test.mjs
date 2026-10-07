@@ -10,8 +10,130 @@ const spell=(s,id)=>s.spellMap.get(ids[id]||id),dot=(s,id)=>Object.values(s.targ
 const finish=(s,id)=>s.advance(Math.max(spell(s,id).activation.duration,spell(s,id).gcd));
 const ready=s=>{s.gcdUntil=s.tick;for(const id of Object.keys(s.cooldowns))s.cooldowns[id]=s.tick;};
 for(const a of ABILITIES)for(const v of [null,...a.talents.map(t=>t.id)])test(`shared execution: ${a.name} / ${v||'base'}`,()=>{const s=fresh([a.id],v?{[a.id]:v}:{});s.resource.value=3;s.rand=()=>0;s.spawnWave();assert.equal(s.use(a.id).ok,true);s.advance(12);assert.ok(Number.isFinite(s.totalDamage));assert.ok(s.resource.value>=0&&s.resource.value<=3);assert.ok(s.totalDamage>0||a.id===ids.focus);assert.equal(s.cast,null);assert.equal(s.castCounts[a.id],1);});
-test('Veil repeatability, Heavy cooldown/damage, Touch additional independent DoT',()=>{const b=fresh(['bolt']);b.use(ids.bolt);finish(b,'bolt');assert.equal(b.totalDamage,640);assert.equal(b.use(ids.bolt).ok,true);const h=fresh(['bolt'],{bolt:'v1'});h.use(ids.bolt);finish(h,'bolt');assert.equal(h.totalDamage,1150);near((h.cooldowns[ids.bolt]-h.tick)/HZ,6);assert.match(h.use(ids.bolt).reason,/cooling/);const t=fresh(['bolt'],{bolt:'v2'});t.use(ids.bolt);finish(t,'bolt');assert.equal(t.totalDamage,640);assert.ok(dot(t,'bolt').maintenance);t.advance(3);assert.equal(t.totalDamage,820);});
-test('Veil resource is 20% per successful hit, no interrupted cast proc',()=>{const s=fresh(['bolt'],{bolt:'v3'});let rolls=0;s.rand=()=>{rolls++;return .199};s.use(ids.bolt);s.advance(.2);s.setMovement(1,0);assert.equal(rolls,0);s.setMovement(0,0);ready(s);s.use(ids.bolt);finish(s,'bolt');assert.equal(s.resource.value,1);assert.equal(rolls,1);s.rand=()=>.2;s.use(ids.bolt);finish(s,'bolt');assert.equal(s.resource.value,1);});
+
+const singleCastDamage = {
+  'veil-bolt': [1150, 640, 1720, 1150],
+  'lingering-glimmer': [1440, 1440, 1440, 2880],
+  'gloam-thread': [720, 990, 720, 720],
+  'astral-flare': [900, 900, 520, 900],
+  'destructive-rift': [2400, 2700, 2400, 2400],
+  'area-pulse': [1080, 1780, 3600, 650],
+  'chain-strike': [520, 520, 240, 520],
+  'focused-energy': [0, 0, 0, 0],
+};
+for (const ability of ABILITIES) for (const [index, talent] of [null, 'v1', 'v2', 'v3'].entries()) {
+  test(`exact complete single-target damage: ${ability.name} / ${talent ?? 'base'}`, () => {
+    const sim = fresh([ability.id], talent ? {[ability.id]: talent} : {});
+    sim.resource.value = 3;
+    sim.rand = () => 0;
+    assert.equal(sim.use(ability.id).ok, true);
+    sim.advance(40);
+    assert.equal(sim.totalDamage, singleCastDamage[ability.id][index]);
+    assert.equal(sim.castCounts[ability.id], 1);
+    assert.equal(sim.cast, null);
+    assert.deepEqual(sim.target().dots, {});
+  });
+}
+
+test('Veil base uses the heavy hit/cooldown; Light Veil remains freely repeatable', () => {
+  const base = fresh(['bolt']);
+  assert.equal(base.use(ids.bolt).ok, true);
+  base.advance(1.5 - 1 / HZ);
+  assert.equal(base.totalDamage, 0);
+  assert.equal(base.cooldowns[ids.bolt], 0);
+  base.advance(1 / HZ);
+  assert.equal(base.totalDamage, 1150);
+  assert.equal(base.cooldowns[ids.bolt], 7.5 * HZ);
+  assert.match(base.use(ids.bolt).reason, /cooling/);
+  base.advance(6 - 1 / HZ);
+  assert.match(base.use(ids.bolt).reason, /cooling/);
+  base.advance(1 / HZ);
+  assert.equal(base.use(ids.bolt).ok, true);
+  finish(base, 'bolt');
+  assert.equal(base.totalDamage, 2300);
+  assert.equal(base.time, 9);
+
+  const light = fresh(['bolt'], {bolt: 'v1'});
+  for (let cast = 1; cast <= 3; cast++) {
+    assert.equal(light.use(ids.bolt).ok, true);
+    finish(light, 'bolt');
+    assert.equal(light.totalDamage, cast * 640);
+    assert.equal(light.cooldowns[ids.bolt], light.tick);
+  }
+});
+
+test('Lingering Touch keeps its explicit hit and DoT with inherited cooldown and refresh carry', () => {
+  const sim = fresh(['bolt'], {bolt: 'v2'});
+  assert.equal(sim.use(ids.bolt).ok, true);
+  finish(sim, 'bolt');
+  assert.equal(sim.totalDamage, 640);
+  assert.equal(sim.cooldowns[ids.bolt] - sim.tick, 6 * HZ);
+  assert.ok(dot(sim, 'bolt').maintenance);
+  assert.equal(dot(sim, 'bolt').expires, 19.5 * HZ);
+  assert.match(sim.use(ids.bolt).reason, /cooling/);
+  sim.advance(3);
+  assert.equal(sim.totalDamage, 820);
+  sim.advance(3);
+  assert.equal(sim.use(ids.bolt).ok, true);
+  const nextTick = dot(sim, 'bolt').nextTick;
+  finish(sim, 'bolt');
+  assert.equal(sim.totalDamage, 1640);
+  assert.equal(dot(sim, 'bolt').nextTick, nextTick);
+  assert.equal(dot(sim, 'bolt').expires - sim.tick, 23.4 * HZ);
+});
+
+test('Charged Veil keeps the heavy hit/cooldown and rolls 20% only on completed hits', () => {
+  const sim = fresh(['bolt'], {bolt: 'v3'});
+  let rolls = 0;
+  sim.rand = () => { rolls++; return .199; };
+  assert.equal(sim.use(ids.bolt).ok, true);
+  sim.advance(.2); sim.setMovement(1, 0);
+  assert.equal(rolls, 0);
+  assert.equal(sim.totalDamage, 0);
+  assert.equal(sim.cooldowns[ids.bolt], 0);
+  sim.setMovement(0, 0); sim.advance(1);
+  assert.equal(sim.use(ids.bolt).ok, true);
+  finish(sim, 'bolt');
+  assert.equal(sim.totalDamage, 1150);
+  assert.equal(sim.resource.value, 1);
+  assert.equal(rolls, 1);
+  assert.equal(sim.cooldowns[ids.bolt] - sim.tick, 6 * HZ);
+  assert.equal(sim.use(ids.bolt).ok, false);
+  sim.advance(6);
+  sim.rand = () => { rolls++; return .2; };
+  assert.equal(sim.use(ids.bolt).ok, true);
+  finish(sim, 'bolt');
+  assert.equal(sim.totalDamage, 2300);
+  assert.equal(sim.resource.value, 1);
+  assert.equal(rolls, 2);
+});
+
+test('queued Veil repeats cannot bypass inherited cooldowns; Light Veil queues normally', () => {
+  for (const talent of [null, 'v1', 'v2', 'v3']) {
+    const sim = fresh(['bolt'], talent ? {bolt: talent} : {});
+    assert.equal(sim.use(ids.bolt).ok, true);
+    sim.advance(1.4);
+    assert.equal(sim.use(ids.bolt).queued, true);
+    sim.advance(.1);
+    assert.equal(sim.queue, null);
+    assert.equal(sim.castCounts[ids.bolt], talent === 'v1' ? 2 : 1);
+    assert.equal(Boolean(sim.cast), talent === 'v1');
+    assert.equal(sim.cooldowns[ids.bolt] - sim.tick, talent === 'v1' ? 0 : 6 * HZ);
+  }
+});
+
+test('Refreshing Rift resets the new base Veil cooldown through the shared reset handler', () => {
+  const sim = fresh(['bolt', 'rift'], {rift: 'v3'});
+  sim.resource.value = 3;
+  sim.use(ids.bolt); finish(sim, 'bolt');
+  assert.match(sim.use(ids.bolt).reason, /cooling/);
+  assert.equal(sim.use(ids.rift).ok, true);
+  finish(sim, 'rift');
+  assert.equal(sim.cooldowns[ids.bolt], sim.tick);
+  assert.equal(sim.use(ids.bolt).ok, true);
+  finish(sim, 'bolt');
+  assert.equal(sim.totalDamage, 4700);
+});
 test('Glimmer instant DoT, exact schedule and capped carry, no impact damage',()=>{const s=fresh(['glimmer']);s.use(ids.glimmer);const d=dot(s,'glimmer'),next=d.nextTick;assert.equal(s.totalDamage,0);s.advance(1.2);s.use(ids.glimmer);assert.equal(dot(s,'glimmer').nextTick,next);assert.equal(dot(s,'glimmer').expires-s.tick,18*HZ+5.4*HZ);s.advance(1.8);assert.equal(s.totalDamage,240);});
 test('Lingering Resource rolls only periodic ticks at 2%',()=>{const s=fresh(['glimmer'],{glimmer:'v1'});let rolls=0;s.rand=()=>{rolls++;return .0199};s.use(ids.glimmer);assert.equal(rolls,0);s.advance(3);assert.equal(rolls,1);assert.equal(s.resource.value,1);s.rand=()=>.02;s.advance(3);assert.equal(s.resource.value,1);});
 test('Astral Refresh rolls ON CAST, resets CD or restores precisely one stored charge',()=>{const s=fresh(['glimmer','flare'],{glimmer:'v2'});s.use(ids.flare);s.advance(1.2);let rolls=0;s.rand=()=>{rolls++;return .499};s.use(ids.glimmer);assert.equal(s.cooldowns[ids.flare],s.tick);assert.equal(rolls,1);s.advance(6);assert.equal(rolls,1);const c=fresh(['glimmer','flare'],{glimmer:'v2',flare:'v3'});c.use(ids.flare);c.advance(1.2);c.use(ids.flare);c.advance(1.2);assert.equal(c.spellCharges[ids.flare].current,1);c.rand=()=>0;c.use(ids.glimmer);assert.equal(c.spellCharges[ids.flare].current,2);assert.ok(c.spellCharges[ids.flare].nextRecharge>c.tick);});
@@ -42,7 +164,7 @@ test('exact session/rolling DPS including time-zero event at exact15s cutoff',()
 test('seed reproducibility across frame chunk sizes',()=>{const a=fresh(undefined,{},{seed:188,mechanics:true}),b=fresh(undefined,{},{seed:188,mechanics:true});a.use(ids.glimmer);b.use(ids.glimmer);a.advance(10);for(let i=0;i<600;i++)b.advance(1/60);assert.deepEqual(a.snapshot(),b.snapshot());assert.deepEqual(a.hazards,b.hazards);});
 test('movement normalized/bounded, invalid time ignored, mid-session setup blocked',()=>{const s=fresh();s.setMovement(1,1);near(Math.hypot(s.input.x,s.input.y),1);s.advance(100);assert.equal(s.player.x,970);assert.equal(s.player.y,530);const t=s.time;s.advance(NaN);s.advance(-2);assert.equal(s.time,t);assert.throws(()=>s.configureLoadout(DEFAULT_LOADOUT),/Stop/);});
 test('short queue captures target at queue time',()=>{const s=fresh(['glimmer','bolt']);s.spawnWave();s.use(ids.glimmer);s.advance(1.1);s.select(s.targets[1].id);assert.equal(s.use(ids.bolt).queued,true);s.select('dummy');s.advance(.1);assert.equal(s.cast.spell,ids.bolt);assert.equal(s.cast.targetId,s.targets[1].id);});
-test('ninth data-only spell runs without an ability-ID branch',()=>{const catalogue=JSON.parse(JSON.stringify(CATALOGUE)),a=JSON.parse(JSON.stringify(catalogue.abilities[0]));a.id='test-comet';a.name='Test Comet';catalogue.abilities.push(a);const s=fresh(['test-comet'],{'test-comet':'v3'},{catalogue});s.rand=()=>0;s.use('test-comet');s.advance(3);assert.equal(s.totalDamage,640);assert.equal(s.resource.value,1);});
+test('ninth data-only spell runs without an ability-ID branch',()=>{const catalogue=JSON.parse(JSON.stringify(CATALOGUE)),a=JSON.parse(JSON.stringify(catalogue.abilities[0]));a.id='test-comet';a.name='Test Comet';catalogue.abilities.push(a);const s=fresh(['test-comet'],{'test-comet':'v3'},{catalogue});s.rand=()=>0;s.use('test-comet');s.advance(3);assert.equal(s.totalDamage,1150);assert.equal(s.resource.value,1);});
 test('periodic-trigger effects retain original consumed-resource context',()=>{const catalogue=JSON.parse(JSON.stringify(CATALOGUE));const a=catalogue.abilities.find(a=>a.id===ids.rift);a.talents[0].patch.triggers=[{event:'periodicTick',chance:1,effects:[{type:'damage',amount:10,perResource:true}]}];const s=fresh(['rift'],{rift:'v1'},{catalogue});s.resource.value=3;s.use(ids.rift);s.advance(1);assert.equal(s.totalDamage,480);});
 test('chain stops when no further target is within jump range while AoE requires a cluster',()=>{const s=fresh(['chain','pulse']);s.spawnWave();s.spawnWave();const chain=s.selectVictims(spell(s,'chain'),'dummy'),area=s.selectVictims(spell(s,'pulse'),'dummy');assert.equal(chain.length,3);assert.equal(area.length,1);});
 

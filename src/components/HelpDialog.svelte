@@ -66,7 +66,7 @@
         <label class="seed-label">Practice seed<input id="seedInput" type="number" value={settings.seed} min="1" max="4294967295" step="1" disabled={active} onchange={event => onsettings({seed: Number(event.currentTarget.value) || 72821})}></label>
         <label class="seed-label">Echo layout<select id="layoutInput" value={settings.layout} disabled={active} onchange={event => onsettings({layout: event.currentTarget.value})}><option value="spread">Spread</option><option value="clustered">Clustered</option></select></label>
         <label class="check-label"><input id="mechanicsInput" type="checkbox" checked={settings.mechanics} disabled={active} onchange={event => onsettings({mechanics: event.currentTarget.checked})}>Ground mechanics</label>
-        <p class="small">Setup applies to the next session. Clustered echoes make area and chain effects easier to practice. Same seed and actions reproduce the same drill. Nothing is saved to an account.</p>
+        <p class="small">Setup applies to the next session. Clustered echoes make area and chain effects easier to practice. Same seed and actions reproduce the same drill. Ability choices, slot order and talents save automatically in this browser on this device. Practice seed, echo layout, ground mechanics and session results reset on reload. Nothing is saved to an account.</p>
       </div>
     </details>
     <p class="inspiration">Expand your understanding of reality. Reach into the astral and weave its threads through the veil. Desktop keyboard recommended. Touch controls are available.</p>

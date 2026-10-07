@@ -1,7 +1,7 @@
 <script>
   import {onMount, tick} from 'svelte';
   import {RaidSim} from './lib/engine.js';
-  import {ABILITIES, DEFAULT_LOADOUT, validateLoadout, compileAbility} from './lib/catalogue.js';
+  import {ABILITIES, DEFAULT_LOADOUT, TALENT_BUDGET, validateLoadout, validateLoadoutDraft, compileAbility} from './lib/catalogue.js';
   import {ArenaRenderer} from './lib/renderer.js';
   import {buildHud, num, duration} from './lib/hud.js';
   import {registerTrainingTools} from './lib/browser-tools.js';
@@ -12,6 +12,7 @@
   import HelpDialog from './components/HelpDialog.svelte';
   import SummaryDialog from './components/SummaryDialog.svelte';
   import KeybindingsDialog from './components/KeybindingsDialog.svelte';
+  import {loadLoadout, saveLoadout} from './lib/loadout-storage.js';
   import {DEFAULT_BINDINGS, MOVE_KEYS, keyLabel, slotForEvent, loadBindings, saveBindings} from './lib/keybindings.js';
 
   export const sim = new RaidSim();
@@ -28,13 +29,14 @@
   let loadoutOpen = $state(false);
   const loadoutValidation = $derived(validateLoadout(settings.loadout));
   const catalogue = $derived(ABILITIES.map(ability => compileAbility(ability.id, settings.loadout.talents[ability.id])));
-  const talentPoints = $derived(5 - Object.values(settings.loadout.talents).filter(Boolean).length);
+  const talentPoints = $derived(TALENT_BUDGET - Object.values(settings.loadout.talents).filter(Boolean).length);
   let helpOpen = $state(false);
   let keybindingsOpen = $state(false);
   let bindings = $state([...DEFAULT_BINDINGS]);
   const keyLabels = $derived(bindings.map(keyLabel));
   const abilityDetails = $derived(Object.fromEntries(catalogue.map(spell => [spell.id, describeAbility(spell, {key: keyLabels[settings.loadout.abilities.indexOf(spell.id)] ?? ''})])));
   let keybindingNotice = $state('');
+  let loadoutNotice = $state('');
   let summaryOpen = $state(false);
   let summary = $state.raw(null);
   let metricsSection = $state(false);
@@ -42,6 +44,7 @@
   let used = $state({});
   let arenaFocused = $state(false);
   const active = $derived(['running', 'paused'].includes(view.phase));
+  const equippedAbilities = $derived(active || loadoutValidation.valid ? view.abilities : []);
   const stateLabel = $derived({ready: 'READY TO TRAIN', running: 'SESSION ACTIVE', paused: 'SESSION PAUSED', stopped: 'SESSION COMPLETE'}[view.phase]);
   const detail = $derived(settings.loadout.abilities.includes(selectedSpell) ? abilityDetails[selectedSpell] : null);
 
@@ -64,6 +67,15 @@
   }
   function visibleAndFocused() { return !document.hidden && (!document.hasFocus || document.hasFocus()); }
   function readSettings() { return {seed: Number(settings.seed) || 72821, loadout: {abilities: [...settings.loadout.abilities], talents: {...settings.loadout.talents}}, mechanics: settings.mechanics, layout: settings.layout}; }
+  function readSession() {
+    const snapshot = sim.snapshot();
+    const setup = readSettings();
+    // An empty setup draft is not installed into the combat engine. Readback
+    // must still describe the visible selection, rather than its last legal one.
+    if (!active && !loadoutValidation.valid) { snapshot.availableSpells = []; snapshot.storedCharges = {}; }
+    if (snapshot.phase === 'ready') { snapshot.loadout = setup.loadout; if (!loadoutValidation.valid) snapshot.spellNames = {}; }
+    return {...snapshot, setup, setupValid: loadoutValidation.valid, setupErrors: [...loadoutValidation.errors]};
+  }
 
   export function startSession() {
     if (keybindingsOpen) return {ok: false, reason: 'Close keybindings before starting a session'};
@@ -153,12 +165,19 @@
     updateSettings(next);
     return readSettings();
   }
-  function updateSettings(next) {
+  function updateSettings(next, persistLoadout = true) {
     if (['running', 'paused'].includes(sim.phase)) return;
+    if (next.loadout !== undefined && !validateLoadoutDraft(next.loadout).valid) return;
     if (next.loadout !== undefined) next = {...next, loadout: {abilities: [...next.loadout.abilities], talents: Object.fromEntries(Object.entries(next.loadout.talents ?? {}).filter(([, talent]) => talent && talent !== 'base'))}};
     settings = {...settings, ...next};
     if (next.seed !== undefined) sim.seed = next.seed;
-    if (next.loadout !== undefined && validateLoadout(next.loadout).valid) sim.configureLoadout(next.loadout);
+    if (next.loadout !== undefined) {
+      if (validateLoadout(next.loadout).valid) sim.configureLoadout(next.loadout);
+      if (persistLoadout) {
+        const result = saveLoadout(next.loadout);
+        loadoutNotice = result.ok ? '' : 'Loadout applied for this visit only. Browser storage is unavailable.';
+      }
+    }
     if (next.layout !== undefined) sim.layout = next.layout;
     if (next.mechanics !== undefined) sim.mechanics = next.mechanics;
     renderHud();
@@ -213,9 +232,14 @@
     bindings = [...stored.bindings]; sim.configureKeybindings(bindings); renderHud();
     if (stored.status === 'corrupt') keybindingNotice = 'Saved spell keys were invalid. Using defaults: 1, 2, 3, 4, 5.';
     if (stored.status === 'unavailable') keybindingNotice = 'Browser storage is unavailable. Keybindings will last for this visit only.';
+    const storedLoadout = loadLoadout();
+    updateSettings({loadout: storedLoadout.loadout}, false);
+    if (storedLoadout.status === 'corrupt') loadoutNotice = 'Saved loadout could not be restored. Using the default abilities.';
+    if (storedLoadout.status === 'repaired') loadoutNotice = 'Saved loadout updated: unavailable or invalid choices were removed. Review your loadout before starting.';
+    if (storedLoadout.status === 'unavailable') loadoutNotice = 'Browser storage is unavailable. Loadout changes will last for this visit only.';
     renderer = new ArenaRenderer(arena);
     lastFrame = performance.now();
-    unregisterTools = registerTrainingTools(document.modelContext, {sim, startSession, pauseSession, resumeSession, stopSession, configure, selectTarget, castSpell});
+    unregisterTools = registerTrainingTools(document.modelContext, {sim, readSession, startSession, pauseSession, resumeSession, stopSession, configure, selectTarget, castSpell});
     function frame(now) {
       const delta = (now - lastFrame) / 1000;
       lastFrame = now;
@@ -252,6 +276,7 @@
       <button id="startBtn" class="primary" hidden={active} disabled={view.phase !== 'stopped' && !loadoutValidation.valid} onclick={() => view.phase === 'stopped' ? showSummary() : startSession()}>{view.phase === 'stopped' ? 'Session summary' : 'Start session'}</button>
     </div>
   </header>
+  {#if loadoutNotice}<p id="loadoutNotice" class="keybinding-notice" role="status">{loadoutNotice}</p>{/if}
   {#if keybindingNotice}<p id="keybindingNotice" class="keybinding-notice" role="status">{keybindingNotice}</p>{/if}
   <section class="metrics" aria-label="Session metrics">
     <div class="metric leading"><span>Session DPS</span><strong id="sessionDps">{num(view.metrics.sessionDps)}</strong></div>
@@ -262,7 +287,7 @@
   </section>
 
   <details class="preplay-setup" hidden={active} bind:open={loadoutOpen}>
-    <summary><span class="setup-heading"><span class="setup-title">Your loadout</span><span class="setup-action">Customize</span></span><span class="setup-count">{settings.loadout.abilities.length}/5 abilities · {talentPoints} talent point{talentPoints === 1 ? '' : 's'} available</span></summary>
+    <summary><span class="setup-heading"><span class="setup-title">Your Loadout</span> <span class="setup-count"><span class="setup-separator" aria-hidden="true">{'— '}</span>{talentPoints} talent point{talentPoints === 1 ? '' : 's'} available</span> <span class="setup-action"><span class="setup-separator" aria-hidden="true">{'— '}</span>Customize<span aria-hidden="true">{loadoutOpen ? ' −' : ' +'}</span></span></span></summary>
     {#if loadoutOpen}<LoadoutPicker tooltipsEnabled={!helpOpen && !summaryOpen && !keybindingsOpen} abilities={catalogue} loadout={settings.loadout} keys={keyLabels} warnings={loadoutValidation.warnings} idPrefix="preplay-loadout" onchange={loadout => updateSettings({loadout})} />{/if}
   </details>
   <div class="workspace">
@@ -283,7 +308,7 @@
         <div class="cast-track"><div id="castFill" style:transform={`scaleX(${view.cast.progress})`}></div><i class="channel-mark one"></i><i class="channel-mark two"></i><i class="channel-mark three"></i></div>
       </div>
       <div class="ability-deck" id="abilityDeck" aria-label="Spells">
-        {#each (active || loadoutValidation.valid ? view.abilities : []) as spell (spell.id)}
+        {#each equippedAbilities as spell (spell.id)}
           <button type="button" class="ability" class:is-locked={spell.state.locked} class:is-proc={spell.state.ready === 'charges'} class:is-ready={spell.state.ready === 'resource'} class:is-queued={spell.queued} class:is-used={used[spell.id]} style:--spell-color={spell.color} data-spell={spell.id} use:abilityTooltip={{detail: abilityDetails[spell.id], disabled: helpOpen || summaryOpen || keybindingsOpen, revision: view.phase}} aria-label={`${spell.key}. ${spell.name}. ${spell.label}`} onpointerdown={event => event.preventDefault()} onclick={() => { selectedSpell = spell.id; castSpell(spell.id); focusArena(); }} onpointerenter={() => { selectedSpell = spell.id; }} onfocus={() => { selectedSpell = spell.id; }}>
             <SpellIcon id={spell.icon} class="ability-icon" state={{...spell.state, key: spell.key}} />
             <span class="ability-name">{spell.name}</span><span class="ability-state">{spell.label}</span>
@@ -311,6 +336,6 @@
   </div>
 
   <HelpDialog keys={keyLabels} onkeybindings={openKeybindings} open={helpOpen} paused={view.phase === 'paused'} {active} {settings} onsettings={updateSettings} onclose={closeHelp} {detail} abilities={catalogue} warnings={loadoutValidation.warnings} {metricsSection} />
-  {#if keybindingsOpen}<KeybindingsDialog {bindings} spells={view.abilities} paused={view.phase === 'paused'} onsave={applyKeybindings} onclose={closeKeybindings} />{/if}
+  {#if keybindingsOpen}<KeybindingsDialog {bindings} spells={equippedAbilities} paused={view.phase === 'paused'} onsave={applyKeybindings} onclose={closeKeybindings} />{/if}
   <SummaryDialog open={summaryOpen} {summary} canStart={loadoutValidation.valid} onclose={() => { summaryOpen = false; }} onrestart={startSession} />
 </main>

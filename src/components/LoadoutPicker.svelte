@@ -1,5 +1,5 @@
 <script module>
-  import {ABILITIES, compileAbility} from '../lib/catalogue.js';
+  import {ABILITIES, SLOT_KEYS, TALENT_BUDGET, compileAbility} from '../lib/catalogue.js';
   // Preview definitions never depend on the selected loadout or combat frames.
   const talentVariants = new Map(ABILITIES.flatMap(ability => ability.talents.map(talent => [
     `${ability.id}:${talent.id}`, compileAbility(ability.id, talent.id),
@@ -39,7 +39,7 @@
   function toggleAbility(id) {
     if (disabled) return;
     const index = selected.indexOf(id);
-    if (index < 0 && selected.length >= keys.length) return;
+    if (index < 0 && selected.length >= SLOT_KEYS.length) return;
     const next = index < 0 ? [...selected, id] : selected.filter(ability => ability !== id);
     const nextTalents = { ...talents };
     if (index >= 0) delete nextTalents[id];
@@ -50,7 +50,7 @@
     const next = { ...talents };
     if (next[abilityId] === talentId) delete next[abilityId];
     else {
-      if (!next[abilityId] && spent >= 5) return;
+      if (!next[abilityId] && spent >= TALENT_BUDGET) return;
       next[abilityId] = talentId;
     }
     onchange({ abilities: [...selected], talents: next });
@@ -66,8 +66,8 @@
 
 <section class="loadout-picker" aria-label="Choose abilities and talents">
   <div class="loadout-heading">
-    <div><h3>Make it your rotation</h3><p>Choose up to five abilities. Add one talent per ability, or leave points unspent.</p></div>
-    <div class="loadout-budget" aria-live="polite"><strong>{selected.length}/5 abilities</strong><span>{5 - spent} talent point{5 - spent === 1 ? '' : 's'} available</span></div>
+    <div><h3>Make it your rotation</h3><p>Choose up to {SLOT_KEYS.length} abilities. Add one talent per ability, or leave points unspent.</p></div>
+    <div class="loadout-budget" aria-live="polite"><strong>{selected.length}/{SLOT_KEYS.length} abilities</strong><span>{TALENT_BUDGET - spent} talent point{TALENT_BUDGET - spent === 1 ? '' : 's'} available</span></div>
   </div>
   {#if disabled}<p class="loadout-lock">Stop the session to change your loadout.</p>{/if}
   <ol class="loadout-slots" aria-label="Action bar order">
@@ -88,9 +88,9 @@
     {#each abilities as ability (ability.id)}
       {@const index = selected.indexOf(ability.id)}
       {@const picked = index >= 0}
-      {@const atLimit = !picked && selected.length >= keys.length}
+      {@const atLimit = !picked && selected.length >= SLOT_KEYS.length}
       <div class="ability-node" data-ability={ability.id} class:selected={picked} style:--node-color={ability.color}>
-        <button type="button" class="ability-orb" class:selected={picked} aria-disabled={disabled || atLimit} aria-pressed={picked} aria-label={`${ability.name}${picked ? `, assigned to ${keys[index]}` : atLimit ? ', five abilities selected; remove one first' : ', add ability'}`} aria-describedby={`${idPrefix}-detail`} data-ability-option={ability.id} use:abilityTooltip={{detail: abilityDetails[ability.id], disabled: !tooltipsEnabled, revision: loadout}} onfocus={() => inspect(ability.id)} onpointerenter={() => inspect(ability.id)} onclick={() => { inspect(ability.id); toggleAbility(ability.id); }}>
+        <button type="button" class="ability-orb" class:selected={picked} aria-disabled={disabled || atLimit} aria-pressed={picked} aria-label={`${ability.name}${picked ? `, assigned to ${keys[index]}` : atLimit ? `, ${SLOT_KEYS.length} abilities selected; remove one first` : ', add ability'}`} aria-describedby={`${idPrefix}-detail`} data-ability-option={ability.id} use:abilityTooltip={{detail: abilityDetails[ability.id], disabled: !tooltipsEnabled, revision: loadout}} onfocus={() => inspect(ability.id)} onpointerenter={() => inspect(ability.id)} onclick={() => { inspect(ability.id); toggleAbility(ability.id); }}>
           <SpellIcon id={ability.icon ?? ability.id} size={144} class="loadout-orb-icon" state={{ key: picked ? keys[index] : '' }} />
           {#if picked}<span class="orb-selected" aria-hidden="true">✓</span>{/if}
         </button>
@@ -111,5 +111,5 @@
   </div>
   {#each warnings as warning (warning)}<p class="loadout-warning" role="status">{warning}</p>{/each}
   {#if selected.length === 0}<p class="loadout-warning" role="status">Choose at least one ability to start a session.</p>{/if}
-  <div class="loadout-footer"><span>Astral charges are shared by spells. Stored spell charges are separate.</span><button type="button" class="quiet" disabled={disabled || spent === 0} onclick={() => onchange({ abilities: [...selected], talents: {} })}>Clear talents</button></div>
+  <div class="loadout-footer"><span>Loadout changes save automatically in this browser on this device.</span><button type="button" class="quiet" disabled={disabled || spent === 0} onclick={() => onchange({ abilities: [...selected], talents: {} })}>Clear talents</button></div>
 </section>

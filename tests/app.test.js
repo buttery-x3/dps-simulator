@@ -210,16 +210,19 @@ function talentOption(id, talent) { return helpNode(id).querySelector(`[data-tal
 function tap(element) { element.click(); flushSync(); }
 
 describe('orb loadout configuration', () => {
-  test('groups Customize beside Your loadout inside the native disclosure and preserves repeated toggles', async () => {
+  test('orders title, talent budget and Customize on the left inside the native disclosure and preserves repeated toggles', async () => {
     const setup = document.querySelector('.preplay-setup');
     const summary = setup.querySelector('summary');
     const heading = summary.querySelector('.setup-heading');
     const action = summary.querySelector('.setup-action');
-    expect(heading.firstElementChild.textContent).toBe('Your loadout');
+    expect(heading.firstElementChild.textContent).toBe('Your Loadout');
     expect(heading.lastElementChild).toBe(action);
-    expect(action.textContent).toBe('Customize');
+    expect(action.textContent).toBe('— Customize +');
+    expect([...heading.children].map(child => child.className)).toEqual(['setup-title', 'setup-count', 'setup-action']);
+    expect(summary.textContent.replace(/\s+/g, ' ').trim()).toBe('Your Loadout — 5 talent points available — Customize +');
     expect(summary.firstElementChild).toBe(heading);
-    expect(heading.nextElementSibling.className).toBe('setup-count');
+    expect(heading.nextElementSibling).toBeNull();
+    expect(heading.querySelector('.setup-count').textContent).not.toContain('abilities');
     expect(summary.querySelector('button, a, [role="button"]')).toBeNull();
     summary.focus(); expect(document.activeElement).toBe(summary);
     // Happy DOM does not implement native summary activation. Toggle its native
@@ -227,6 +230,7 @@ describe('orb loadout configuration', () => {
     for (const open of [true, false, true, false, true]) {
       setup.open = open; setup.dispatchEvent(new Event('toggle')); flushSync(); await tick();
       expect(Boolean(setup.querySelector('.loadout-picker'))).toBe(open);
+      expect(action.textContent).toBe(`— Customize ${open ? '−' : '+'}`);
       expect($('startBtn').disabled).toBe(false);
       expect(app.sim.phase).toBe('ready');
     }

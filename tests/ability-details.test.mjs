@@ -18,10 +18,10 @@ test('DoT totals follow the engine’s integer-tick timing for authored fraction
   assert.equal(sim.totalDamage, 720);
 });
 const expected = {
-  'veil-bolt/base': [/1\.5s cast/, /No spell cooldown/, /Deals 640 damage/],
-  'veil-bolt/v1': [/1\.5s cast/, /6s cooldown/, /Deals 1,150 damage/],
-  'veil-bolt/v2': [/Deals 640 damage/, /180 damage every 3s for 18s/, /5\.4s \(30%/],
-  'veil-bolt/v3': [/Deals 640 damage/, /completed target hit independently \(20% chance\)/, /Generates 1 Astral charge/],
+  'veil-bolt/base': [/1\.5s cast/, /6s cooldown/, /Deals 1,150 damage/],
+  'veil-bolt/v1': [/1\.5s cast/, /No spell cooldown/, /Deals 640 damage/],
+  'veil-bolt/v2': [/6s cooldown/, /Deals 640 damage/, /180 damage every 3s for 18s/, /1,080 total/, /5\.4s \(30%/],
+  'veil-bolt/v3': [/6s cooldown/, /Deals 1,150 damage/, /completed target hit independently \(20% chance\)/, /Generates 1 Astral charge/],
   'lingering-glimmer/base': [/Instant/, /240 damage every 3s for 18s/, /1,440 total/, /No direct damage on application/],
   'lingering-glimmer/v1': [/Instant/, /240 damage every 3s for 18s/, /damaging DoT tick independently \(2% chance\)/],
   'lingering-glimmer/v2': [/Instant/, /240 damage every 3s for 18s/, /On cast \(50% chance\)/, /exactly 1 stored spell charge/],
@@ -83,6 +83,18 @@ for (const ability of ABILITIES) for (const talentId of [null, ...ability.talent
 test('the exhaustive expectations cover exactly eight bases and 24 talents', () => {
   assert.equal(Object.keys(expected).length, 32);
   assert.equal(Object.keys(expected).filter(key => key.endsWith('/base')).length, 8);
+});
+
+test('Veil details expose Light Veil by its stable first talent ID without stale heavy tuning', () => {
+  const light = describe('veil-bolt', 'v1');
+  assert.equal(light.talentName, 'Light Veil');
+  assert.match(light.talentDescription, /640 damage with no cooldown/);
+  assert.doesNotMatch(text(light), /1,150|6s cooldown/);
+  assert.doesNotMatch(text(describe('veil-bolt')), /640|No spell cooldown/);
+  for (const talent of ['v2', 'v3']) {
+    assert.match(describe('veil-bolt', talent).talentDescription, /6s cooldown/);
+    assert.doesNotMatch(text(describe('veil-bolt', talent)), /No spell cooldown/);
+  }
 });
 
 test('Astral Refresh distinguishes cooldown reset from exactly one stored spell charge', () => {
@@ -154,7 +166,7 @@ test('output is immutable and independent of subsequent source or key changes', 
   assert.throws(() => first.facts.push('bad'), TypeError);
   assert.throws(() => { first.effects[0] = 'bad'; }, TypeError);
   spell.effects[0].amount = 777;
-  assert.equal(first.effects[0], 'Deals 640 damage.');
+  assert.equal(first.effects[0], 'Deals 1,150 damage.');
   assert.equal(describeAbility(spell).effects[0], 'Deals 777 damage.');
 });
 
@@ -173,11 +185,11 @@ test('custom compiled numbers and renamed references, rather than ability IDs or
       for (const effect of definition.effects || []) if (effect.type === 'dot') effect.name = `Custom ${effect.name}`;
     }
   }
-  const heavy = catalogue.abilities[0].talents[0];
-  heavy.patch.activation = {kind: 'cast', duration: 2.5, moving: true};
-  heavy.patch.cooldown = 7;
-  heavy.patch.effects[0].amount = 1234;
-  heavy.patch.description = 'Deliberately uninformative supplementary prose.';
+  const light = catalogue.abilities[0].talents[0];
+  light.patch.activation = {kind: 'cast', duration: 2.5, moving: true};
+  light.patch.cooldown = 7;
+  light.patch.effects[0].amount = 1234;
+  light.patch.description = 'Deliberately uninformative supplementary prose.';
   assert.equal(validateCatalogue(catalogue).valid, true);
   const result = describe('custom-veil-bolt', 'v1', {catalogue});
   assert.equal(result.name, 'Custom Veil Bolt');
@@ -185,7 +197,7 @@ test('custom compiled numbers and renamed references, rather than ability IDs or
   assert.match(text(result), /1\.4s global cooldown/);
   assert.match(text(result), /7s cooldown/);
   assert.match(text(result), /Deals 1,234 damage/);
-  assert.doesNotMatch(text(result), /1,150|1\.5s cast/);
+  assert.doesNotMatch(text(result), /640|1,150|1\.5s cast/);
   assert.match(text(describe('custom-lingering-glimmer', 'v2', {catalogue})), /Custom Astral Flare's cooldown/);
   assert.match(text(describe('custom-chain-strike', 'v2', {catalogue})), /Custom Lingering Glimmer and Custom Lingering Touch/);
   assert.match(text(describe('custom-destructive-rift', 'v1', {catalogue})), /Astral charges \(1–5\)/);

@@ -11,11 +11,11 @@ npm ci
 npm run dev
 ```
 
-Open the local address printed by Vite (usually <http://127.0.0.1:5173>). The default server binds to this computer. `npm start` is an alias. There is no backend, account or analytics. Only spell keybindings are saved locally in the browser.
+Open the local address printed by Vite (usually <http://127.0.0.1:5173>). The default server binds to this computer. `npm start` is an alias. There is no backend, account or analytics. Spell keybindings and selected loadouts are saved locally in the browser.
 
 ## Choose a loadout
 
-Start immediately with five base abilities, or open **Customize loadout** before starting. The same controls are in Help.
+Start immediately with five base abilities, or open **Your Loadout → Customize** before starting. Returning visits restore your last selection. The same controls are in Help.
 
 - Eight large ability orbs, each with three connected talent orbs.
 - Select one to five abilities, with five selected by default.
@@ -28,7 +28,18 @@ Start immediately with five base abilities, or open **Customize loadout** before
 
 The default selects Veil Bolt, Lingering Glimmer, Gloam Thread, Astral Flare and Area Pulse, with all five talent points unspent. Destructive Rift, Chain Strike and Focused Energy are available in the catalogue. Rift is intentionally the only Astral charge spender; generation comes from talents. Shared **Astral charges** are capped at three and start at zero. An ability’s **stored spell charges** are a separate pool of uses that recharge over time; they never pay an Astral charge cost.
 
+Veil Bolt is now a 1.5s stationary cast for 1,150 damage with a 6s cooldown starting on completion. **Light Veil** restores the repeatable 640-damage cast with no cooldown. Lingering Touch keeps its explicit 640-damage hit and DoT while inheriting the 6s cooldown; Charged Veil inherits the 1,150-damage hit and 6s cooldown with its unchanged 20% Astral charge chance. Gloam Thread remains the default filler channel.
+
 The 8 abilities and 24 talents are provisional prototype tuning, not a balanced class or historical simulation. See [the spell-system contract and tuning](docs/SPELL_SYSTEM.md).
+
+## Saved loadouts
+
+- Ability selections, slot order and chosen talents save automatically whenever you change them in the loadout picker, Help or validated browser tools. There is no separate Save/Cancel step for loadouts; keybinding drafts still use their existing Save/Cancel controls.
+- The versioned `veilweaver.loadout.v1` localStorage entry is separate from `veilweaver.keybindings.v1`. Preferences stay in this browser, on this device, for this site. There is no account, cloud sync or backend.
+- Partial selections and intentionally empty setup drafts survive refresh. An empty draft still requires selecting at least one ability before starting; at most five abilities and five talents are accepted, with one talent per selected ability.
+- If the catalogue changes, valid abilities retain their order and valid talents survive; stale, duplicate or invalid choices are removed with a notice. Malformed/unsupported data or a completely obsolete selection falls back to the default abilities. Loading never overwrites saved data.
+- If browser storage is blocked or full, changes still apply for this visit and a visible notice explains that they could not be saved.
+- Refresh starts a fresh ready session. Combat state, time, metrics, results, seed, ground mechanics and echo layout are not saved.
 
 ## Play
 
@@ -61,7 +72,7 @@ Open **Keybindings** in the header or **Customize spell keys** in Help. Select a
 - Supported keys: letters other than WASD/P; top-row digits 0–9; the US punctuation positions backquote, minus, equal, brackets, backslash, semicolon, quote, comma, period and slash; arrow keys; Space; numpad digits and add/subtract/multiply/divide/decimal/comma/equal. Numpad bindings are separate from top-row numbers. Num Lock does not change a physical numpad binding when the browser supplies its code.
 - WASD movement, Tab targeting, P pause, Escape focus release and Enter start are reserved. Backspace, function keys, modifier keys and browser-control keys are not assignable. Ctrl/Alt/Command/Shift combinations, auto-repeat and text-composition events never cast. Labels use US physical-key names; another keyboard layout or Caps Lock does not change the binding. Some OS/device shortcuts never reach a browser and are not supported.
 - Opening the editor pauses a running session and clears held movement. Save and Cancel leave it paused. Resume explicitly when ready; editing does not add elapsed time or damage. Keyboard combat requires arena focus and never runs while a dialog is open or while typing in a form.
-- Preferences are stored under `veilweaver.keybindings.v1` in this site's localStorage, only in this browser on this device. They do not sync to an account. Invalid or unsupported saved data safely restores defaults with a notice; unavailable storage permits changes for this visit and reports the limitation. Results and loadout setup are still cleared on page reload.
+- Preferences are stored under `veilweaver.keybindings.v1` in this site's localStorage, only in this browser on this device. They do not sync to an account. Invalid or unsupported saved data safely restores defaults with a notice; unavailable storage permits changes for this visit and reports the limitation. Session results are still cleared on page reload; loadout choices are saved separately.
 - A completed summary preserves the keys present when the run stopped, even if preferences are changed afterward. Mid-run edits only change keys, never combat tuning or the selected abilities.
 
 ## Extensible spell definitions
@@ -83,7 +94,7 @@ The simulation uses a 60 Hz integer clock and seeded randomness. Hidden tabs, un
 - Overkill is excluded. Display rounding does not change stored totals or time.
 - **DoT coverage** replaces the former single-Sorrowbrand coverage label. It pools covered ticks / available ticks for every selected maintenance DoT and every living target. Glimmer and the Lingering Touch talent are maintenance DoTs; short spender/AoE DoTs are not maintenance objectives.
 - Every target contributes from its first live tick, including initial application delays and newly spawned echoes. There is no grace period, excluded add time, or post-hoc denominator reduction. Each DoT receives the same live-target denominator; missing one lowers pooled coverage. With no maintenance DoT selected, the metric is N/A.
-- A stopped summary preserves exact totals, seed, loadout/talents and coverage until a new session. Reloading the page clears results and setup.
+- A stopped summary preserves exact totals, seed, loadout/talents and coverage until a new session. Reloading the page clears results and session setup while retaining loadout choices and spell keys.
 
 ## Verify
 
@@ -93,13 +104,13 @@ npm run verify
 
 This runs Svelte diagnostics, core catalogue/engine/readability tests, compiled Svelte component integration/layout tests, and a production build. Individual commands: `npm run check`, `npm run test:core`, `npm run test:ui`, `npm run build`.
 
-Tests exercise all 32 base/talent forms, interaction boundaries, schema failures, data-only extension, deterministic timers, stored-spell-charge/Astral-charge separation, no-recursion links, cast/channel interruptions, DoT coverage, exact DPS, seed replay, hazards, loadout selection, default/custom keyboard mapping, capture/cancel/conflicts/reset, persistence/storage failure, Help/summary/focus/touch flows, teardown and native Canvas rendering. There is no hosted CI workflow.
+Tests exercise all 32 base/talent forms, interaction boundaries, schema failures, data-only extension, deterministic timers, stored-spell-charge/Astral-charge separation, no-recursion links, cast/channel interruptions, DoT coverage, exact DPS, seed replay, hazards, loadout selection, default/custom keyboard mapping, capture/cancel/conflicts/reset, keybinding and loadout persistence/storage failure, stale-catalogue repair, empty-draft safety, Help/summary/focus/touch flows, teardown and native Canvas rendering. There is no hosted CI workflow.
 
 ### Verification limits
 
 Compiled component tests use Happy DOM with native Canvas; they do not establish real-browser layout, live combat feel or touch-device behavior. Before merging or publishing, smoke-test the branch in a target browser: loadout/orb selection, effective base/talent tooltips on hover and keyboard focus, tooltip Escape/scroll/resize dismissal and viewport clamping, touch Help ability details, reorder, key capture/Save/Cancel/Escape/Tab/reset, browser reload persistence, long key labels, start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, desktop viewport heights and mobile layout. WebMCP registration is tested with a mock, not a live browser implementation.
 
-The viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This ability-tooltips and Astral-wording branch is based on `feature/custom-keybindings` at `ac00812fe2c14e90775834ce06b133cf674549b0`, preserving its spell catalogue, custom slot keys and UI improvements. This work does not merge or deploy any branch.
+The viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This Veil-defaults and saved-loadout branch is based directly on `feature/ability-tooltips` at `8b138013f01eecddc3d17669c131b1faaa9c91ba`, preserving its spell catalogue, custom slot keys and effective-ability tooltips. This work does not merge or deploy any branch.
 
 ## Build and preview
 
@@ -118,6 +129,7 @@ src/components/LoadoutPicker.svelte  Orb/talent selection and ordered slots
 src/components/HelpDialog.svelte     Help and setup
 src/components/KeybindingsDialog.svelte  Draft key capture, cancel and reset
 src/lib/keybindings.js          Physical-key validation and local preferences
+src/lib/loadout-storage.js      Versioned local loadout preferences and safe repair
 src/components/SummaryDialog.svelte  Frozen results
 src/lib/catalogue.js            Canonical data, validation, patches and compiler
 src/lib/ability-details.js      Compiled-ability tooltip/detail projection

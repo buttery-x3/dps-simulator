@@ -195,13 +195,13 @@ scripts, callbacks, formulas, imports or user-defined trigger names.
 
 All abilities have a base 1.2s GCD and 700 target range except the self-buff's
 unused range of zero. The Astral charge maximum is three; sessions start at zero.
-Every ability has `v1`, `v2`, `v3`, with the unchanged base selected by default.
+Every ability has `v1`, `v2`, `v3`, with no talent selected by default.
 Numbers in this table are deliberately explicit so future balancing is a data
 change rather than an engine branch.
 
 | Ability | Base | v1 | v2 | v3 |
 | --- | --- | --- | --- | --- |
-| Veil Bolt | Stationary 1.5s cast, 640 damage, no cooldown | Heavy Veil: 1,150 damage, 6s cooldown | Lingering Touch: base hit plus 180/3s for 18s, maintenance DoT with 30% carry | Charged Veil: 20% chance for one Astral charge on completed hit |
+| Veil Bolt | Stationary 1.5s cast, 1,150 damage, 6s cooldown | Light Veil: stationary 1.5s cast, 640 damage, no cooldown | Lingering Touch: 640 direct plus 180/3s for 18s, 6s cooldown, maintenance DoT with 30% carry | Charged Veil: 1,150 damage, 6s cooldown, 20% chance for one Astral charge on completed hit |
 | Lingering Glimmer | Instant DoT, 240/3s for 18s, 30% carry, maintenance | Lingering Resource: same instant DoT, 2% chance for one Astral charge per periodic tick | Astral Refresh: same instant DoT, 50% **on cast** to reset Flare or restore one stored spell charge | Linger Longer: 36s duration, same tick damage/rate |
 | Gloam Thread | Stationary 3s channel, four 180 ticks at 0.75s | Gathering Gloam: 180/225/270/315 ticks | Full Conduit: guaranteed one Astral charge only on full completion | Twin Threads: primary plus nearest one within 260, secondary takes 50% |
 | Astral Flare | Instant 900 hit, 8s cooldown | Astral Builder: 50% chance for one Astral charge per hit | Drifting Flare: moving 1s cast, 520 damage, no cooldown | Stored Starlight: three stored spell charges, 10s serial recharge |
@@ -209,6 +209,15 @@ change rather than an engine branch.
 | Area Pulse | Instant area DoT, radius 220, 180/2s for 12s, 30s cooldown | Falling Night: stationary 2s cast, 700 direct plus normal DoT | Gloam Storm: stationary 4s area channel, eight 450 ticks at 0.5s, no lingering field, 30s cooldown | Compressed Pulses: instant 650 direct, radius 140, three stored spell charges, 10s serial recharge |
 | Chain Strike | Stationary 1.5s cast, 520 to primary plus up to three, 260 jump range | Binding Chains: links bounced victims for 10s, copies 10% primary damage | Lingering Chains: 240 per target, 10s cooldown, refreshes only existing Glimmer/Touch on hit targets | Charged Chains: independent 10% chance for one Astral charge per hit target |
 | Focused Energy | Instant self-buff, 15s, 10% shorter cast/GCD, 120s cooldown | Deeper Focus: 20% shorter cast/GCD | Frequent Focus: 60s cooldown | Abundant Focus: normal timing buff plus double Astral charge gains |
+
+Veil Bolt's default uses the former Heavy Veil tuning. The first talent retains
+its `v1` ID and is now Light Veil, restoring the former repeatable base tuning.
+Lingering Touch inherits the new cooldown but preserves its explicit 640-damage
+hit and 1,080 total DoT damage; Charged Veil inherits both the 1,150-damage hit
+and cooldown. Normal cast cooldowns begin on completion, so the unbuffed base,
+Lingering Touch and Charged Veil can start a cast every 7.5s at fastest; Light
+Veil remains repeatable every 1.5s. These timings do not account for resets,
+interruptions or other actions in the rotation.
 
 The design draft's old IDs map as follows: `basic-cast` → `veil-bolt`,
 `lingering-mark` → `lingering-glimmer`, `sustained-beam` → `gloam-thread`,

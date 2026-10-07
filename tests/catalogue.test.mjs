@@ -92,6 +92,32 @@ test('all Glimmer variants stay instant DoTs with correctly scoped triggers', ()
   assert.equal(compileAbility('lingering-glimmer', 'v3').effects[0].duration, 36);
 });
 
+test('Veil inversion keeps stable IDs and explicit damage/cooldown inheritance', () => {
+  const bolt = ABILITIES.find(ability => ability.id === 'veil-bolt');
+  assert.deepEqual(bolt.talents.map(({id, name}) => [id, name]), [
+    ['v1', 'Light Veil'], ['v2', 'Lingering Touch'], ['v3', 'Charged Veil'],
+  ]);
+  for (const [talent, amount, cooldown] of [[null, 1150, 6], ['v1', 640, 0], ['v2', 640, 6], ['v3', 1150, 6]]) {
+    const ability = compileAbility('veil-bolt', talent);
+    assert.deepEqual(ability.activation, {kind: 'cast', duration: 1.5, moving: false});
+    assert.equal(ability.gcd, 1.2);
+    assert.equal(ability.cooldown, cooldown);
+    assert.equal(ability.charges, 1);
+    assert.deepEqual(ability.effects[0], {type: 'damage', amount});
+    assert.equal(ability.effects.length, talent === 'v2' ? 2 : 1);
+    if (talent !== 'v3') assert.deepEqual(ability.triggers, []);
+  }
+  assert.deepEqual(compileAbility('veil-bolt', 'v2').effects[1], {
+    type: 'dot', id: 'lingering-touch', name: 'Lingering Touch', duration: 18,
+    interval: 3, amount: 180, carry: 0.3, maintenance: true,
+  });
+  assert.deepEqual(compileAbility('veil-bolt', 'v3').triggers,
+    [{event: 'hit', chance: 0.2, effects: [{type: 'resource', amount: 1}]}]);
+  assert.equal(Object.hasOwn(bolt.talents[1].patch, 'cooldown'), false);
+  assert.equal(Object.hasOwn(bolt.talents[2].patch, 'cooldown'), false);
+  assert.equal(Object.hasOwn(bolt.talents[2].patch, 'effects'), false);
+});
+
 test('Thread completion resource, ramp and nearest-target split are declarative', () => {
   assert.deepEqual(compileAbility('gloam-thread').activation, {kind: 'channel', duration: 3, moving: false, interval: 0.75});
   assert.equal(compileAbility('gloam-thread', 'v1').effects[0].rampPerTick, 0.25);
@@ -198,7 +224,7 @@ test('invalid compiled variants are rejected even when their bases are valid', (
 test('rejects invalid numbers, fractional counts, timing and impossible charging', () => {
   for (const value of [NaN, Infinity, -Infinity, -1, 0, 1e-10]) invalid(changed(c => { c.abilities[0].gcd = value; }));
   invalid(changed(c => { c.abilities[0].charges = 1.5; }), /integer/);
-  invalid(changed(c => { c.abilities[0].charges = 3; }), /positive cooldown/);
+  invalid(changed(c => { c.abilities[0].charges = 3; c.abilities[0].cooldown = 0; }), /positive cooldown/);
   invalid(changed(c => { c.abilities[0].cooldown = 0.0001; }), /simulation tick/);
   invalid(changed(c => { c.abilities[2].activation.interval = 0; }), /interval/);
   invalid(changed(c => { c.abilities[2].activation.interval = 0.7; }), /whole number/);

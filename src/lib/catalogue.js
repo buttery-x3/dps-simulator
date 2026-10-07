@@ -24,18 +24,19 @@ const talent = (id, name, description, patch) => ({id, name, description, patch:
 const base = (definition) => ({gcd: 1.2, cooldown: 0, charges: 1, targeting: {...single}, effects: [], triggers: [], talents: [], ...definition});
 
 export const SLOT_KEYS = freeze(['1', '2', '3', '4', '5']);
+export const TALENT_BUDGET = 5;
 export const CATALOGUE = freeze({
   schemaVersion: 1,
   resource: {id: 'void', max: 3},
   abilities: [
     base({
       id: 'veil-bolt', name: 'Veil Bolt', short: 'Bolt', color: '#c4b5fd', icon: 'veil-bolt',
-      description: 'A repeatable 1.5s stationary cast dealing 640 damage.',
-      activation: activation('cast', 1.5, false), effects: [damage(640)],
+      description: 'A 1.5s stationary cast dealing 1,150 damage with a 6s cooldown.',
+      activation: activation('cast', 1.5, false), cooldown: 6, effects: [damage(1150)],
       talents: [
-        talent('v1', 'Heavy Veil', 'A 1.5s cast dealing 1,150 damage with a 6s cooldown.', {cooldown: 6, effects: [damage(1150)]}),
-        talent('v2', 'Lingering Touch', 'Deals 640 damage, then 180 every 3s for 18s. Refreshing carries up to 30% of the base DoT duration.', {effects: [damage(640), dot('lingering-touch', 'Lingering Touch', 18, 3, 180, true, 0.3)]}),
-        talent('v3', 'Charged Veil', 'The completed hit has a 20% chance to generate one Astral charge.', {triggers: [proc('hit', 0.2)]}),
+        talent('v1', 'Light Veil', 'A repeatable 1.5s stationary cast dealing 640 damage with no cooldown.', {cooldown: 0, effects: [damage(640)]}),
+        talent('v2', 'Lingering Touch', 'Deals 640 damage, then 180 every 3s for 18s. Keeps the 6s cooldown. Refreshing carries up to 30% of the base DoT duration.', {effects: [damage(640), dot('lingering-touch', 'Lingering Touch', 18, 3, 180, true, 0.3)]}),
+        talent('v3', 'Charged Veil', 'Keeps the 1,150-damage hit and 6s cooldown. The completed hit has a 20% chance to generate one Astral charge.', {triggers: [proc('hit', 0.2)]}),
       ],
     }),
     base({
@@ -378,14 +379,14 @@ export function compileAbility(id, talentId = null, catalogue = CATALOGUE) {
   return compiled(definition, talentId);
 }
 
-export function validateLoadout(loadout, catalogue = CATALOGUE) {
+function validateSelection(loadout, catalogue, minimumAbilities) {
   const check = validateCatalogue(catalogue);
   const errors = [...check.errors];
   const warnings = [];
   inspectData(loadout, errors, 'loadout');
   if (errors.length) return {valid: false, errors, warnings};
   if (!shape(loadout, ['abilities', 'talents'], ['abilities'], errors, 'loadout')) return {valid: false, errors, warnings};
-  if (!array(loadout.abilities, 1, SLOT_KEYS.length, errors, 'loadout.abilities')) return {valid: false, errors, warnings};
+  if (!array(loadout.abilities, minimumAbilities, SLOT_KEYS.length, errors, 'loadout.abilities')) return {valid: false, errors, warnings};
   if (new Set(loadout.abilities).size !== loadout.abilities.length) errors.push('loadout.abilities: each ability may be selected only once');
   const byId = new Map(catalogue.abilities.map(ability => [ability.id, ability]));
   for (const id of loadout.abilities) if (!byId.has(id)) errors.push(`loadout.abilities: unknown ability ${display(id)}`);
@@ -395,6 +396,7 @@ export function validateLoadout(loadout, catalogue = CATALOGUE) {
     if (!loadout.abilities.includes(id)) errors.push(`loadout.talents.${id}: talent belongs to an unselected ability`);
     if (talentId !== null && talentId !== 'base' && !byId.get(id)?.talents.some(talent => talent.id === talentId)) errors.push(`loadout.talents.${id}: unknown talent ${display(talentId)}`);
   }
+  if (plain(talents) && Object.values(talents).filter(id => id !== null && id !== 'base').length > TALENT_BUDGET) errors.push(`loadout.talents: choose at most ${TALENT_BUDGET} talents`);
   if (errors.length) return {valid: false, errors, warnings};
   const selection = loadout.abilities.map(id => compiled(byId.get(id), talents[id]));
   const hasGenerator = selection.some(ability => everyEffect(ability).some(effect => effect.type === 'resource'));
@@ -403,6 +405,16 @@ export function validateLoadout(loadout, catalogue = CATALOGUE) {
   if (hasGenerator && !hasSpender) warnings.push('This loadout generates Astral charges but has no spender; gains at the Astral charge cap will overflow.');
   for (const ability of selection) for (const effect of everyEffect(ability)) if (effect.type === 'restoreCooldown' && !loadout.abilities.includes(effect.abilityId)) warnings.push(`${ability.name} can restore ${effect.abilityId}, which is not selected.`);
   return {valid: true, errors: [], warnings: [...new Set(warnings)]};
+}
+
+/** Playable loadouts must have at least one ability. */
+export function validateLoadout(loadout, catalogue = CATALOGUE) {
+  return validateSelection(loadout, catalogue, 1);
+}
+
+/** Setup may be temporarily empty, but every other catalogue rule still applies. */
+export function validateLoadoutDraft(loadout, catalogue = CATALOGUE) {
+  return validateSelection(loadout, catalogue, 0);
 }
 
 export function compileLoadout(loadout, catalogue = CATALOGUE) {

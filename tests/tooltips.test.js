@@ -63,6 +63,27 @@ describe('ability tooltip integration', () => {
     expect(document.activeElement).not.toBe(tip());
   });
 
+  test('Veil tooltips show heavy base, Light Veil replacement and inherited talent cooldowns', () => {
+    for (const [talent, damage, cooldown, name] of [
+      [null, '1,150', '6s cooldown', 'No talent selected'],
+      ['v1', '640', 'No spell cooldown', 'Light Veil'],
+      ['v2', '640', '6s cooldown', 'Lingering Touch'],
+      ['v3', '1,150', '6s cooldown', 'Charged Veil'],
+    ]) {
+      configure('veil-bolt', talent);
+      const button = spellButton('veil-bolt');
+      pointer(button, 'pointerenter');
+      expect(text()).toContain(name);
+      expect(text()).toContain(`Deals ${damage} damage`);
+      expect(text()).toContain(cooldown);
+      expect(text()).toContain('1.5s cast');
+      expect(text()).not.toContain('Heavy Veil');
+      if (talent === 'v2') expect(text()).toContain('1,080 total');
+      if (talent === 'v3') expect(text()).toContain('20% chance');
+      escape(button);
+    }
+  });
+
   test('keyboard focus exposes an accessible tooltip on a resource-locked ability', () => {
     configure('destructive-rift'); const button = spellButton('destructive-rift');
     expect(button.classList.contains('is-locked')).toBe(true);
