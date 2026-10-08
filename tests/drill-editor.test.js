@@ -2,12 +2,13 @@ import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest';
 import {flushSync, mount, unmount} from 'svelte';
 import {fromStore, writable} from 'svelte/store';
 import DrillEditor from '../src/components/DrillEditor.svelte';
-import {DEFAULT_DRILL, createDrill, validateDrill} from '../src/lib/drills.js';
+import {DEFAULT_DRILL, DRILL_LIMITS, createDrill, createAddWave, validateDrill} from '../src/lib/drills.js';
 import {MAX_DRILL_IMPORT_BYTES} from '../src/lib/drill-storage.js';
 
 let editor, state, changes, selections, notice;
 const copy = value => JSON.parse(JSON.stringify(value));
 const buttons = () => [...document.querySelectorAll('button')];
+const labeled = text => document.querySelector(`[aria-label="${text}"]`);
 const button = text => buttons().find(item => item.textContent.trim() === text);
 const field = text => [...document.querySelectorAll('label.field')].find(item => item.querySelector('span')?.textContent === text)?.querySelector('input,select,textarea');
 const tap = element => { expect(element).toBeTruthy(); element.click(); flushSync(); };
@@ -175,6 +176,201 @@ describe('placement and rules', () => {
     expect(editor.getDraft().valid).toBe(false);
     input(field('Wall center-to-center spacing'), '110'); expect(editor.getDraft().valid).toBe(true);
     select(field('Projectile pattern'), 'aimed'); expect(field('Projectile center-to-center spacing')).toBeTruthy();
+  });
+});
+
+
+describe('ADD spawn-point authoring', () => {
+  const placement = () => editor.getDraft().drill.addWaves[0].placement;
+  const points = () => placement().points;
+  const pointAction = (number, action) => labeled(`Add wave 1: ${action} point ${number}`);
+
+  test('converts legacy placement to one ordered point and back using the selected point', () => {
+    const drill = createDrill({addWaves: [createAddWave({placement: {mode: 'fixed', x: 253.5, y: 181.75}})]});
+    launch([drill]);
+    select(labeled('Add wave 1 placement'), 'points');
+    expect(placement()).toEqual({mode: 'points', selection: 'ordered', points: [{x: 253.5, y: 181.75}]});
+    expect(pointAction(1, 'select').getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('#placementHint').textContent).toContain('Add-wave point 1');
+    tap(labeled('Add wave 1: add spawn point'));
+    input(field('Point 2 X'), '800.125'); input(field('Point 2 Y'), '420.75');
+    select(labeled('Add wave 1 placement'), 'fixed');
+    expect(placement()).toEqual({mode: 'fixed', x: 800.125, y: 420.75});
+    expect(field('Origin X').value).toBe('800.125');
+    expect(editor.getDraft().valid).toBe(true);
+  });
+
+  test('add, reorder and remove preserve the selected logical point without persisting UI state', () => {
+    launch(); tap(button('Preview / place points'));
+    tap(labeled('Add wave 1: add spawn point'));
+    expect(points()).toHaveLength(3);
+    input(field('Point 3 X'), '700'); input(field('Point 3 Y'), '320');
+    tap(labeled('Add wave 1: move point 3 up'));
+    expect(points()).toEqual([{x: 430, y: 180}, {x: 700, y: 320}, {x: 570, y: 180}]);
+    expect(pointAction(2, 'select').getAttribute('aria-pressed')).toBe('true');
+    tap(labeled('Add wave 1: move point 1 down'));
+    expect(pointAction(1, 'select').getAttribute('aria-pressed')).toBe('true');
+    tap(pointAction(3, 'remove'));
+    expect(points()).toEqual([{x: 700, y: 320}, {x: 430, y: 180}]);
+    tap(pointAction(1, 'remove'));
+    expect(points()).toEqual([{x: 430, y: 180}]);
+    expect(pointAction(1, 'select').getAttribute('aria-pressed')).toBe('true');
+    expect(pointAction(1, 'remove').disabled).toBe(true);
+    expect(labeled('Add wave 1: move point 1 up').disabled).toBe(true);
+    expect(labeled('Add wave 1: move point 1 down').disabled).toBe(true);
+    tap(button('Save drill'));
+    expect(state.current.library[0].addWaves[0].placement).toEqual({mode: 'points', selection: 'ordered', points: [{x: 430, y: 180}]});
+  });
+
+  test('removing an earlier point and the selected last point keeps a valid selection', () => {
+    launch(); tap(labeled('Add wave 1: add spawn point'));
+    input(field('Point 3 X'), '750');
+    tap(pointAction(1, 'remove'));
+    expect(pointAction(2, 'select').getAttribute('aria-pressed')).toBe('true');
+    expect(points()[1].x).toBe(750);
+    tap(pointAction(2, 'remove'));
+    expect(pointAction(1, 'select').getAttribute('aria-pressed')).toBe('true');
+    const canvas = document.querySelector('canvas');
+    pointer(canvas, 'pointerdown', 400, 300); pointer(canvas, 'pointerup', 400, 300);
+    expect(points()).toEqual([{x: 400, y: 300}]);
+    expect(editor.getDraft().valid).toBe(true);
+  });
+
+  test('numbered canvas markers select, drag, and keyboard-move only the chosen point', () => {
+    launch(); const canvas = document.querySelector('canvas');
+    const drawText = vi.spyOn(canvas.getContext('2d'), 'fillText');
+    tap(button('Preview / place points'));
+    expect(drawText).toHaveBeenCalledWith('1', 430, 180);
+    expect(drawText).toHaveBeenCalledWith('2', 570, 180);
+    pointer(canvas, 'pointerdown', 570, 180); pointer(canvas, 'pointermove', 660, 260); pointer(canvas, 'pointerup', 660, 260);
+    expect(points()).toEqual([{x: 430, y: 180}, {x: 660, y: 260}]);
+    expect(pointAction(2, 'select').getAttribute('aria-pressed')).toBe('true');
+    expect(field('Point 2 X').value).toBe('660');
+    canvas.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight', shiftKey: true, bubbles: true, cancelable: true})); flushSync();
+    expect(points()[1]).toEqual({x: 670, y: 260});
+    expect(drawText).toHaveBeenCalledWith('2', 670, 260);
+    expect(drawText).toHaveBeenCalledWith('SPAWN POINTS · ORDERED · Point 2 selected', 44, 518);
+    pointer(canvas, 'pointermove', 800, 300); expect(points()[1]).toEqual({x: 670, y: 260});
+  });
+
+  test('placing points over boss/player markers does not accidentally move those actors', () => {
+    launch(); const canvas = document.querySelector('canvas');
+    tap(pointAction(2, 'select'));
+    pointer(canvas, 'pointerdown', 500, 160); pointer(canvas, 'pointerup', 500, 160);
+    expect(points()[1]).toEqual({x: 500, y: 160});
+    pointer(canvas, 'pointerdown', 500, 445); pointer(canvas, 'pointerup', 500, 445);
+    expect(points()[1]).toEqual({x: 500, y: 445});
+    expect(editor.getDraft().drill.bosses).toEqual(DEFAULT_DRILL.bosses);
+    expect(editor.getDraft().drill.playerStart).toEqual(DEFAULT_DRILL.playerStart);
+    tap(button('● Player start'));
+    pointer(canvas, 'pointerdown', 300, 350); pointer(canvas, 'pointerup', 300, 350);
+    expect(editor.getDraft().drill.playerStart).toEqual({x: 300, y: 350});
+    expect(points()[1]).toEqual({x: 500, y: 445});
+  });
+
+  test.each(['random', 'ordered', 'priority'])('%s selection, order and fractional coordinates survive save and reload', selection => {
+    const other = createDrill({id: 'other', name: 'Other'});
+    launch([copy(DEFAULT_DRILL), other]);
+    select(labeled('Add wave 1 point selection'), selection);
+    input(field('Point 1 X'), '123.375'); input(field('Point 2 Y'), '321.125');
+    const expected = copy(placement());
+    tap(button('Save drill'));
+    select(labeled('Saved drill library'), other.id);
+    select(labeled('Saved drill library'), DEFAULT_DRILL.id);
+    expect(placement()).toEqual(expected);
+    expect(labeled('Add wave 1 point selection').value).toBe(selection);
+    expect(editor.getDraft()).toMatchObject({dirty: false, valid: true});
+    expect(Object.keys(placement()).sort()).toEqual(['mode', 'points', 'selection']);
+  });
+
+  test('blank and out-of-world coordinates block save/export and preserve authored values', () => {
+    launch(); input(field('Point 2 X'), '');
+    expect(editor.getDraft().valid).toBe(false);
+    expect(editor.getDraft().errors.join(' ')).toContain('placement.points[1].x');
+    expect(button('Save drill').disabled).toBe(true); expect(button('Export drill').disabled).toBe(true);
+    input(field('Point 2 X'), '971');
+    expect(points()[1].x).toBe(971); expect(editor.getDraft().valid).toBe(false);
+    input(field('Point 2 X'), '570.125'); input(field('Point 1 Y'), '29.99');
+    expect(points()[0].y).toBe(29.99); expect(editor.getDraft().valid).toBe(false);
+    input(field('Point 1 Y'), '180.5');
+    expect(editor.getDraft().valid).toBe(true);
+    expect(field('Point 1 Y').validity.valid).toBe(true);
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  test('add-point limit and independent wave selection stay bounded', () => {
+    const drill = createDrill();
+    drill.addWaves[0].placement.points = Array.from({length: DRILL_LIMITS.spawnPoints}, (_, index) => ({x: 40 + index * 20, y: 180}));
+    drill.addWaves.push(createAddWave({id: 'second-wave', placement: {mode: 'points', selection: 'priority', points: [{x: 800, y: 300}]}}));
+    launch([drill]);
+    expect(labeled('Add wave 1: add spawn point').disabled).toBe(true);
+    tap(pointAction(32, 'select'));
+    tap(labeled('Add wave 2: select point 1'));
+    const canvas = document.querySelector('canvas');
+    pointer(canvas, 'pointerdown', 820, 330); pointer(canvas, 'pointerup', 820, 330);
+    expect(editor.getDraft().drill.addWaves[1].placement.points).toEqual([{x: 820, y: 330}]);
+    expect(points()).toHaveLength(32); expect(points()[31]).toEqual({x: 660, y: 180});
+    tap(document.querySelectorAll('.wave-card .rule-actions button')[0]);
+    expect(pointAction(32, 'select').getAttribute('aria-pressed')).toBe('true');
+    tap(pointAction(1, 'remove')); expect(labeled('Add wave 1: add spawn point').disabled).toBe(false);
+    tap(labeled('Add wave 1: add spawn point')); expect(points()).toHaveLength(32);
+    expect(pointAction(32, 'select').getAttribute('aria-pressed')).toBe('true');
+    expect(editor.getDraft().valid).toBe(true);
+  });
+
+  test('legacy fixed/player/random ADD controls and mechanic controls remain supported', () => {
+    const drill = createDrill({addWaves: [createAddWave()]}); launch([drill]);
+    const legacy = copy(placement());
+    select(labeled('Add wave 1 placement'), 'player');
+    expect(placement()).toEqual({...legacy, mode: 'player'});
+    select(labeled('Add wave 1 placement'), 'random');
+    expect(placement()).toEqual({...legacy, mode: 'random'});
+    const drawText = vi.spyOn(document.querySelector('canvas').getContext('2d'), 'fillText');
+    tap(document.querySelector('.wave-card .rule-actions button'));
+    expect(drawText).toHaveBeenCalledWith('RANDOM POSITION · sampled for each add', 44, 52);
+    expect(document.querySelector('.wave-card').textContent).toContain('Picks a new position for each target');
+    select(labeled('Add wave 1 placement'), 'fixed');
+    expect(field('Origin X').value).toBe(String(legacy.x));
+    expect(editor.getDraft().valid).toBe(true);
+    const mechanic = labeled('Hostile circle 1 placement');
+    expect([...mechanic.options].map(option => option.value)).toEqual(['fixed', 'player', 'random']);
+    select(mechanic, 'fixed');
+    tap(document.querySelector('.rule-card:not(.wave-card) .rule-actions button'));
+    const canvas = document.querySelector('canvas');
+    pointer(canvas, 'pointerdown', 320, 250); pointer(canvas, 'pointerup', 320, 250);
+    expect(editor.getDraft().drill.mechanics[0].placement).toEqual({mode: 'fixed', x: 320, y: 250});
+    expect(placement()).toEqual(legacy);
+  });
+
+  test('New from default exposes the updated default while keeping saved legacy drills intact', () => {
+    const legacy = createDrill({id: DEFAULT_DRILL.id, name: 'Saved older practice', addWaves: [createAddWave()]});
+    launch([legacy]); input(field('Drill name'), 'Unfinished edit');
+    window.confirm.mockReturnValue(false); tap(button('New from default'));
+    expect(field('Drill name').value).toBe('Unfinished edit');
+    window.confirm.mockReturnValue(true); tap(button('New from default'));
+    expect(editor.getDraft()).toMatchObject({dirty: true, valid: true});
+    expect(placement()).toEqual({mode: 'points', selection: 'ordered', points: [{x: 430, y: 180}, {x: 570, y: 180}]});
+    expect(editor.getDraft().drill.id).not.toBe(legacy.id);
+    expect(pointAction(1, 'select').getAttribute('aria-pressed')).toBe('true');
+    expect(state.current.library).toEqual([legacy]); expect(changes).not.toHaveBeenCalled();
+    tap(button('Save drill'));
+    expect(state.current.library).toHaveLength(2); expect(state.current.library[0]).toEqual(legacy);
+    expect(state.current.library[1].addWaves).toEqual(DEFAULT_DRILL.addWaves);
+  });
+
+  test('point-list JSON export and import round-trip without UI selection state', async () => {
+    launch(); tap(pointAction(2, 'select')); select(labeled('Add wave 1 point selection'), 'priority');
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:point-list');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    tap(button('Export drill'));
+    const exported = JSON.parse(await create.mock.calls[0][0].text());
+    expect(exported.addWaves[0].placement).toEqual(placement());
+    exported.id = 'imported-points'; exported.name = 'Imported points';
+    importText(JSON.stringify(exported));
+    expect(editor.getDraft().drill).toEqual(exported);
+    expect(editor.getDraft()).toMatchObject({dirty: false, valid: true});
+    expect(state.current.library).toHaveLength(2);
   });
 });
 

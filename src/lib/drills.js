@@ -1,10 +1,11 @@
 /** Versioned, JSON-only encounter definitions. Angles are degrees; times are seconds. */
+// ADD point lists extend the v1 placement union; existing v1 definitions keep their meaning.
 export const DRILL_VERSION = 1;
 export const DRILL_HZ = 60;
 export const DRILL_WORLD = Object.freeze({width: 1000, height: 560, margin: 30});
 export const MECHANIC_KINDS = Object.freeze(['circle', 'line', 'projectiles', 'safe-deadline', 'safe-hold']);
 export const DRILL_LIMITS = Object.freeze({
-  bosses: 8, addWaves: 16, mechanics: 32, count: 32, minFrequency: .25, maxTime: 3600,
+  bosses: 8, addWaves: 16, mechanics: 32, count: 32, spawnPoints: 32, minFrequency: .25, maxTime: 3600,
   maxLifetime: 120, minRadius: 12, maxRadius: 450, minWidth: 12, maxWidth: 1000,
   minSpeed: 10, maxSpeed: 1200, minSize: 2, maxSize: 40, minSpacing: 30, maxSpacing: 1000,
   maxDamage: 100000, maxHealth: 10000000, liveAdds: 64, liveHazards: 96,
@@ -34,11 +35,14 @@ export function createMechanic(kind = 'circle', overrides = {}) {
 export function createAddWave(overrides = {}) {
   const value = {id: `wave-${++factorySequence}`, first: 14, frequency: 30, count: 2,
     placement: {mode: 'fixed', x: 255, y: 180}, health: 6200, lifetime: 40};
-  return copy({...value, ...overrides, placement: {...value.placement, ...overrides.placement}});
+  // Only legacy placements inherit x/y defaults. Point lists are a distinct shape.
+  return copy({...value, ...overrides, placement: overrides.placement?.mode === 'points'
+    ? overrides.placement : {...value.placement, ...overrides.placement}});
 }
 export const DEFAULT_DRILL = freeze({version: 1, id: 'training-default', name: 'Sentinel practice', seed: 72821,
   playerStart: {x: 500, y: 445}, bosses: [{id: 'dummy', name: 'Eternal sentinel', x: 500, y: 160}],
-  addWaves: [createAddWave({id: 'echo-wave'})],
+  addWaves: [createAddWave({id: 'echo-wave', placement: {mode: 'points', selection: 'ordered',
+    points: [{x: 430, y: 180}, {x: 570, y: 180}]}})],
   mechanics: [createMechanic('circle', {id: 'ground-circle', first: 6, frequency: 6.4, placement: {mode: 'player'}})],
 });
 export function createDrill(overrides = {}) {
@@ -86,10 +90,16 @@ export function validateDrill(input) {
     if (!Array.isArray(v) || v.length < min || v.length > max) { error(path, `must contain ${min}–${max} items`); return []; }
     return Array.from(v, (entry, index) => map(entry, `${path}[${index}]`));
   };
-  const schedule = (v, path) => ({
+  const addPlacement = (v, path) => {
+    if (v?.mode !== 'points') return position(v, path, true);
+    if (!object(v, path, ['mode', 'selection', 'points'])) return null;
+    return {mode: 'points', selection: enumeration(v.selection, `${path}.selection`, ['random', 'ordered', 'priority']),
+      points: array(v.points, `${path}.points`, 1, DRILL_LIMITS.spawnPoints, position)};
+  };
+  const schedule = (v, path, isAdd = false) => ({
     id: id(v.id, `${path}.id`), first: number(v.first, `${path}.first`, 0, DRILL_LIMITS.maxTime),
     frequency: number(v.frequency, `${path}.frequency`, DRILL_LIMITS.minFrequency, DRILL_LIMITS.maxTime),
-    placement: position(v.placement, `${path}.placement`, true),
+    placement: isAdd ? addPlacement(v.placement, `${path}.placement`) : position(v.placement, `${path}.placement`, true),
   });
   const common = ['id', 'kind', 'first', 'frequency', 'placement'];
   const fields = {
@@ -115,7 +125,7 @@ export function validateDrill(input) {
     }),
     addWaves: array(input.addWaves, 'drill.addWaves', 0, DRILL_LIMITS.addWaves, (v, path) => {
       if (!object(v, path, ['id', 'first', 'frequency', 'count', 'placement', 'health', 'lifetime'])) return null;
-      return {...schedule(v, path), count: number(v.count, `${path}.count`, 1, 32, true),
+      return {...schedule(v, path, true), count: number(v.count, `${path}.count`, 1, 32, true),
         health: number(v.health, `${path}.health`, 1, DRILL_LIMITS.maxHealth), lifetime: number(v.lifetime, `${path}.lifetime`, 1 / DRILL_HZ, 120)};
     }),
     mechanics: array(input.mechanics, 'drill.mechanics', 0, DRILL_LIMITS.mechanics, (v, path) => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {DEFAULT_DRILL, createDrill} from '../src/lib/drills.js';
+import {DEFAULT_DRILL, createDrill, createAddWave, exportDrill} from '../src/lib/drills.js';
 import {LOADOUT_STORAGE_KEY} from '../src/lib/loadout-storage.js';
 import {DRILL_STORAGE_KEY, MAX_DRILL_IMPORT_BYTES, MAX_DRILL_LIBRARY_SIZE, loadDrillLibrary, saveDrillLibrary, parseDrillImport, mergeDrillImport, exportDrillLibrary, newDrillId} from '../src/lib/drill-storage.js';
 import {drawEditorPreview, editorPoint, editorViewport} from '../src/lib/editor-preview.js';
@@ -8,6 +8,14 @@ import {drawEditorPreview, editorPoint, editorViewport} from '../src/lib/editor-
 const copy = value => JSON.parse(JSON.stringify(value));
 const first = () => createDrill({id: 'first-practice', name: 'First practice'});
 const second = () => createDrill({id: 'second-practice', name: 'Second practice', seed: 44});
+const legacySentinel = () => ({
+  version: 1, id: 'training-default', name: 'Sentinel practice', seed: 72821,
+  playerStart: {x: 500, y: 445}, bosses: [{id: 'dummy', name: 'Eternal sentinel', x: 500, y: 160}],
+  addWaves: [{id: 'echo-wave', first: 14, frequency: 30, count: 2,
+    placement: {mode: 'fixed', x: 255, y: 180}, health: 6200, lifetime: 40}],
+  mechanics: [{id: 'ground-circle', kind: 'circle', first: 6, frequency: 6.4,
+    placement: {mode: 'player', x: 500, y: 280}, delay: 2, radius: 76, damage: 1000}],
+});
 function memory(raw) {
   const data = new Map(raw === undefined ? [] : [[DRILL_STORAGE_KEY, raw]]);
   return {data, getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value)};
@@ -38,6 +46,83 @@ test('single drill and whole library JSON exports round-trip canonically', () =>
   assert.deepEqual(parseDrillImport(exported), {ok: true, kind: 'library', drills: library, selectedId: library[1].id});
   assert.deepEqual(parseDrillImport(JSON.stringify(library[0])), {ok: true, kind: 'drill', drills: [library[0]], selectedId: library[0].id});
   assert.deepEqual(library, [first(), second()]);
+});
+
+for (const mode of ['fixed', 'player', 'random']) test(`legacy ${mode} ADD placement survives import, export, save and browser reload`, () => {
+  const drill = createDrill({id: `legacy-${mode}`, addWaves: [createAddWave({placement: {mode, x: 321, y: 456}})]});
+  const single = parseDrillImport(exportDrill(drill));
+  const library = parseDrillImport(exportDrillLibrary(single.drills, drill.id));
+  const storage = memory();
+  assert.deepEqual(saveDrillLibrary(library.drills, library.selectedId, storage), {ok: true});
+  assert.deepEqual(loadDrillLibrary(storage).library, [drill]);
+  assert.deepEqual(loadDrillLibrary(storage).library[0].addWaves[0].placement, {mode, x: 321, y: 456});
+});
+
+for (const selection of ['random', 'ordered', 'priority']) test(`${selection} point lists survive import, export, save and browser reload`, () => {
+  const drill = createDrill({id: `points-${selection}`, addWaves: [createAddWave({placement: {
+    mode: 'points', selection, points: [{x: 430, y: 180}, {x: 570, y: 180}],
+  }})]});
+  const imported = parseDrillImport(exportDrill(drill));
+  const storage = memory();
+  assert.deepEqual(saveDrillLibrary(imported.drills, imported.selectedId, storage), {ok: true});
+  assert.deepEqual(loadDrillLibrary(storage).library, [drill]);
+  const loaded = loadDrillLibrary(storage);
+  loaded.library[0].addWaves[0].placement.points[0].x = 31;
+  assert.deepEqual(loadDrillLibrary(storage).library, [drill]);
+  assert.deepEqual(parseDrillImport(exportDrillLibrary([drill])).drills, [drill]);
+});
+
+test('only the exact old canonical Sentinel default upgrades on browser load, without writing', () => {
+  const old = legacySentinel();
+  const reverseKeys = value => Array.isArray(value) ? value.map(reverseKeys)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reverseKeys(item)])) : value;
+  const raw = JSON.stringify({version: 1, selectedId: second().id, drills: [reverseKeys(old), second()]});
+  const storage = memory(raw);
+  let writes = 0;
+  const setItem = storage.setItem;
+  storage.setItem = (...args) => { writes++; setItem(...args); };
+  const loaded = loadDrillLibrary(storage);
+  assert.deepEqual(loaded, {library: [DEFAULT_DRILL, second()], selectedId: second().id, status: 'loaded'});
+  assert.equal(writes, 0);
+  assert.equal(storage.data.get(DRILL_STORAGE_KEY), raw);
+  assert.deepEqual(old, legacySentinel());
+  loaded.library[0].addWaves[0].placement.points[0].x = 400;
+  assert.equal(loadDrillLibrary(storage).library[0].addWaves[0].placement.points[0].x, 430);
+  assert.equal(DEFAULT_DRILL.addWaves[0].placement.points[0].x, 430);
+  assert.deepEqual(saveDrillLibrary(loaded.library, loaded.selectedId, storage), {ok: true});
+  assert.equal(writes, 1);
+  assert.deepEqual(loadDrillLibrary(storage).library, loaded.library);
+});
+
+test('customized drills using the old default ID retain each setting on browser load', () => {
+  const edits = [
+    d => { d.name = 'My Sentinel practice'; }, d => { d.seed++; }, d => { d.playerStart.x++; },
+    d => { d.bosses[0].x++; }, d => { d.bosses[0].name = 'My boss'; }, d => { d.addWaves[0].count++; },
+    d => { d.addWaves[0].first++; }, d => { d.addWaves[0].frequency++; }, d => { d.addWaves[0].health++; },
+    d => { d.addWaves[0].lifetime++; }, d => { d.addWaves[0].placement.x++; },
+    d => { d.addWaves[0].placement.mode = 'player'; }, d => { d.addWaves[0].placement.mode = 'random'; },
+    d => { d.mechanics[0].frequency++; }, d => { d.mechanics[0].damage++; }, d => { d.mechanics = []; },
+    d => { d.id = 'copied-default'; },
+  ];
+  for (const edit of edits) {
+    const drill = legacySentinel(); edit(drill);
+    const raw = exportDrillLibrary([drill]);
+    const storage = memory(raw);
+    assert.deepEqual(loadDrillLibrary(storage).library, [drill]);
+    assert.equal(storage.data.get(DRILL_STORAGE_KEY), raw);
+  }
+});
+
+test('importing or merging the untouched legacy default preserves legacy intent', () => {
+  const old = legacySentinel();
+  assert.deepEqual(parseDrillImport(JSON.stringify(old)).drills, [old]);
+  const imported = parseDrillImport(exportDrillLibrary([old]));
+  assert.deepEqual(imported.drills, [old]);
+  assert.deepEqual(mergeDrillImport([first()], imported).library, [first(), old]);
+  assert.deepEqual(mergeDrillImport([copy(DEFAULT_DRILL)], imported, {replace: true}).library, [old]);
+  const storage = memory();
+  assert.deepEqual(saveDrillLibrary([old], old.id, storage), {ok: true});
+  assert.deepEqual(JSON.parse(storage.data.get(DRILL_STORAGE_KEY)).drills, [old]);
 });
 
 for (const raw of ['{', '', 'null', '[]', '{}', '{"version":999,"drills":[]}', '{"version":1,"selectedId":"missing","drills":[]}', 'x'.repeat(MAX_DRILL_IMPORT_BYTES + 1)]) {

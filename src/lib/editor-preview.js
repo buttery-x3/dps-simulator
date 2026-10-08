@@ -17,7 +17,7 @@ export function editorPoint(clientX, clientY, rect) {
   return {x: Math.round(clamp(x, 30, 970)), y: Math.round(clamp(y, 30, 530))};
 }
 
-export function drawEditorPreview(canvas, draft, selection = 'player', width = 1000, height = 560) {
+export function drawEditorPreview(canvas, draft, selection = 'player', width = 1000, height = 560, selectedPoint = 0) {
   const ctx = canvas?.getContext('2d');
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -43,13 +43,23 @@ export function drawEditorPreview(canvas, draft, selection = 'player', width = 1
   const activeRule = draft.mechanics.find(rule => `mechanic:${rule.id}` === selection) ?? draft.addWaves.find(rule => `wave:${rule.id}` === selection);
   if (activeRule) {
     const placement = activeRule.placement;
-    const origin = placement.mode === 'player' ? draft.playerStart : placement;
+    const origin = placement.mode === 'player' ? draft.playerStart : placement.mode === 'points' ? placement.points[selectedPoint] ?? placement.points[0] : placement;
     const x = finite(origin.x, 500), y = finite(origin.y, 280);
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, 1000, 560); ctx.clip(); ctx.lineWidth = 2; ctx.setLineDash([7, 6]);
-    if (placement.mode === 'random' && activeRule.pattern !== 'wall') {
+    if (placement.mode === 'points') {
+      // Point markers are painted last so they remain selectable over bosses and player markers.
+      if (placement.selection === 'ordered' && placement.points.length > 1) {
+        ctx.strokeStyle = '#c5a7e170'; ctx.beginPath();
+        placement.points.forEach((point, index) => {
+          const px = finite(point.x, 500), py = finite(point.y, 280);
+          if (index === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      }
+    } else if (placement.mode === 'random' && activeRule.pattern !== 'wall') {
       ctx.fillStyle = '#d4c18a09'; ctx.fillRect(30, 30, 940, 500);
       ctx.strokeStyle = '#d4c18a90'; ctx.strokeRect(30, 30, 940, 500);
-      ctx.fillStyle = '#dac691'; ctx.fillText('RANDOM POSITION · sampled at each occurrence', 44, 52);
+      ctx.fillStyle = '#dac691'; ctx.fillText(activeRule.kind ? 'RANDOM POSITION · sampled at each occurrence' : 'RANDOM POSITION · sampled for each add', 44, 52);
     } else if (activeRule.kind === 'line') {
       ctx.translate(x, y); ctx.rotate(finite(activeRule.angle) * Math.PI / 180);
       ctx.fillStyle = '#db885124'; ctx.fillRect(-1000, -finite(activeRule.width, 40) / 2, 2000, finite(activeRule.width, 40));
@@ -90,5 +100,23 @@ export function drawEditorPreview(canvas, draft, selection = 'player', width = 1
   ctx.lineWidth = 2; circle(x, y, 12, '#203e45', '#94d9d7');
   ctx.fillStyle = '#d7f4ed'; ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y + 4); ctx.lineTo(x - 5, y + 4); ctx.closePath(); ctx.fill();
   ctx.font = '12px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#a8d8d3'; ctx.fillText('Player start', x, y + 37);
+  if (activeRule?.placement.mode === 'points') {
+    const {points, selection: pointSelection} = activeRule.placement;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, 1000, 560); ctx.clip(); ctx.setLineDash([]);
+    // Draw the selected point last, including when two authored points overlap.
+    const indexes = points.map((_, index) => index).filter(index => index !== selectedPoint);
+    if (points[selectedPoint]) indexes.push(selectedPoint);
+    for (const index of indexes) {
+      const point = points[index], px = finite(point.x, 500), py = finite(point.y, 280), selected = index === selectedPoint;
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      if (selected) circle(px, py, 25, '#dac69118', '#dac691');
+      circle(px, py, 15, selected ? '#493e27' : '#352b44', selected ? '#f1d991' : '#c5a7e1');
+      ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = selected ? '#fff2c9' : '#efddff'; ctx.fillText(String(index + 1), px, py);
+    }
+    ctx.font = '12px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#e0cbee';
+    ctx.fillText(`SPAWN POINTS · ${pointSelection.toUpperCase()} · Point ${selectedPoint + 1} selected`, 44, 518);
+    ctx.restore();
+  }
   ctx.textAlign = 'left'; ctx.restore();
 }

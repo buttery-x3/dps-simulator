@@ -10,6 +10,19 @@ const byteLength = text => new TextEncoder().encode(text).byteLength;
 const fail = reason => ({ok: false, reason});
 const resolveStorage = storage => storage === undefined ? globalThis.localStorage : storage;
 
+// Keep this exact historical fixture independent of future default changes. Only
+// an untouched built-in drill already in browser storage is eligible to upgrade.
+const legacySentinel = {
+  version: 1, id: 'training-default', name: 'Sentinel practice', seed: 72821,
+  playerStart: {x: 500, y: 445}, bosses: [{id: 'dummy', name: 'Eternal sentinel', x: 500, y: 160}],
+  addWaves: [{id: 'echo-wave', first: 14, frequency: 30, count: 2,
+    placement: {mode: 'fixed', x: 255, y: 180}, health: 6200, lifetime: 40}],
+  mechanics: [{id: 'ground-circle', kind: 'circle', first: 6, frequency: 6.4,
+    placement: {mode: 'player', x: 500, y: 280}, delay: 2, radius: 76, damage: 1000}],
+};
+// Validation builds a stable property order, including nested objects.
+const legacySentinelSignature = JSON.stringify(validateDrill(legacySentinel).value);
+
 /** IDs belong to drills, so renaming never breaks the selected drill. */
 export function newDrillId() {
   return `drill-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`}`;
@@ -90,7 +103,10 @@ export function loadDrillLibrary(storage) {
   if (raw === null) return fallback('default');
   const result = parseDrillImport(raw);
   if (!result.ok || result.kind !== 'library') return fallback('corrupt');
-  return {library: result.drills, selectedId: result.selectedId, status: 'loaded'};
+  // Upgrade in memory only; ordinary saving persists it. Imports never use this
+  // path, and customized drills retain every validated setting, including this ID.
+  const library = result.drills.map(drill => JSON.stringify(drill) === legacySentinelSignature ? clone(DEFAULT_DRILL) : drill);
+  return {library, selectedId: result.selectedId, status: 'loaded'};
 }
 
 /** Caller retains the library in memory even when persistence is unavailable. */

@@ -17,9 +17,18 @@ test('default and every complete factory validate and canonically round trip', (
 test('factories are independent clones and preserve nested placement defaults', () => {
   const a = createDrill(), b = createDrill();
   a.playerStart.x = 75; a.bosses[0].x = 80; a.mechanics[0].placement.x = 90;
+  a.addWaves[0].placement.points[0].x = 100;
   assert.equal(b.playerStart.x, 500); assert.equal(b.bosses[0].x, 500); assert.equal(b.mechanics[0].placement.x, 500);
+  assert.equal(b.addWaves[0].placement.points[0].x, 430);
   const mechanic = createMechanic('circle', {placement: {mode: 'player'}});
   assert.deepEqual(mechanic.placement, {mode: 'player', x: 500, y: 280});
+  assert.deepEqual(createAddWave().placement, {mode: 'fixed', x: 255, y: 180});
+  assert.deepEqual(createAddWave({placement: {mode: 'player', y: 200}}).placement, {mode: 'player', x: 255, y: 200});
+  const placement = {mode: 'points', selection: 'ordered', points: [{x: 100, y: 200}]};
+  const wave = createAddWave({placement});
+  assert.deepEqual(wave.placement, placement);
+  wave.placement.points[0].x = 300;
+  assert.equal(placement.points[0].x, 100);
   assert.notEqual(a.id, b.id);
 });
 
@@ -29,8 +38,72 @@ test('compile snapshots are deeply immutable, isolated and use integer tick sche
   assert.equal(schedule.firstTick, 7); assert.equal(schedule.frequencyTicks, 74);
   assert.equal(schedule.delayTicks, 27); assert.equal(schedule.durationTicks, 47);
   input.playerStart.x = 31; assert.equal(compiled.drill.playerStart.x, 500);
+  input.addWaves[0].placement.points[0].x = 31;
+  input.addWaves[0].placement.points.push({x: 600, y: 180});
+  assert.deepEqual(compiled.drill.addWaves[0].placement.points, [{x: 430, y: 180}, {x: 570, y: 180}]);
   assert.throws(() => { compiled.drill.bosses[0].x = 31; }, TypeError);
+  assert.throws(() => { compiled.drill.addWaves[0].placement.points[0].x = 31; }, TypeError);
+  assert.throws(() => { compiled.drill.addWaves[0].placement.points.push({x: 30, y: 30}); }, TypeError);
+  assert.throws(() => { compiled.schedules[0].rule.placement.selection = 'random'; }, TypeError);
   assert.throws(() => { compiled.schedules.push({}); }, TypeError);
+});
+
+test('Sentinel default uses two ordered points alongside its unchanged boss', () => {
+  assert.deepEqual(DEFAULT_DRILL.addWaves[0].placement,
+    {mode: 'points', selection: 'ordered', points: [{x: 430, y: 180}, {x: 570, y: 180}]});
+  assert.deepEqual(DEFAULT_DRILL.bosses[0], {id: 'dummy', name: 'Eternal sentinel', x: 500, y: 160});
+  assert.equal(DEFAULT_DRILL.addWaves[0].count, 2);
+});
+
+for (const mode of ['fixed', 'player', 'random']) test(`legacy ADD ${mode} placement survives validation and export/import unchanged`, () => {
+  const drill = createDrill({addWaves: [createAddWave({placement: {mode, x: 345, y: 234}})]});
+  assert.deepEqual(validateDrill(drill).value, drill);
+  assert.deepEqual(parseDrillImport(exportDrill(drill)).drills, [drill]);
+  assert.deepEqual(compileDrill(drill).drill.addWaves[0].placement, {mode, x: 345, y: 234});
+});
+
+for (const selection of ['random', 'ordered', 'priority']) test(`ADD ${selection} point list validates and canonically round-trips`, () => {
+  const placement = {mode: 'points', selection, points: [{x: 30, y: 30}, {x: 970, y: 530}]};
+  const drill = createDrill({addWaves: [createAddWave({placement})]});
+  assert.deepEqual(validateDrill(drill).value, drill);
+  assert.deepEqual(parseDrillImport(exportDrill(drill)).drills, [drill]);
+  assert.deepEqual(Object.keys(compileDrill(drill).drill.addWaves[0].placement), ['mode', 'selection', 'points']);
+  drill.addWaves[0].placement.points = Array.from({length: DRILL_LIMITS.spawnPoints}, () => ({x: 500, y: 280}));
+  assert.equal(validateDrill(drill).valid, true);
+  assert.equal(DRILL_LIMITS.spawnPoints, 32);
+});
+
+test('ADD point lists require a known selection, strict union shape and 1–32 valid points', () => {
+  for (const selection of ['sequence', 'fixed', '', null, {}, [], 1, undefined]) {
+    invalid(d => { d.addWaves[0].placement.selection = selection; }, /placement.selection/);
+  }
+  for (const points of [[], null, {}, 'points', 1, undefined, Array(1), Array(33).fill({x: 500, y: 280})]) {
+    invalid(d => { d.addWaves[0].placement.points = points; }, /placement.points/);
+  }
+  for (const point of [null, [], 'point', 1, {}, {x: 30}, {y: 30}, {x: 500, y: 280, mode: 'fixed'}]) {
+    invalid(d => { d.addWaves[0].placement.points = [point]; }, /placement.points\[0\]/);
+  }
+  for (const [key, values] of [['x', [29, 971, '30', NaN, Infinity, null, {}, []]], ['y', [29, 531, '30', NaN, Infinity, null, {}, []]]]) {
+    for (const value of values) invalid(d => { d.addWaves[0].placement.points[0][key] = value; }, new RegExp(`placement.points\\[0\\].${key}`));
+  }
+  invalid(d => { delete d.addWaves[0].placement.selection; }, /selection: is required/);
+  invalid(d => { delete d.addWaves[0].placement.points; }, /points: is required/);
+  invalid(d => { d.addWaves[0].placement.x = 500; }, /placement.x: unknown field/);
+  invalid(d => { d.addWaves[0].placement.y = 280; }, /placement.y: unknown field/);
+  invalid(d => { d.addWaves[0].placement.mode = 'unknown'; }, /placement.mode/);
+  invalid(d => { d.addWaves[0].placement = {mode: 'fixed', x: 500, y: 280, points: [{x: 500, y: 280}]}; }, /points: unknown field/);
+  for (const placement of [null, [], 1, 'points']) invalid(d => { d.addWaves[0].placement = placement; }, /plain object/);
+});
+
+test('all mechanic kinds reject ADD point-list placement', () => {
+  for (const kind of MECHANIC_KINDS) {
+    const drill = createDrill({mechanics: [createMechanic(kind)]});
+    drill.mechanics[0].placement = clone(DEFAULT_DRILL.addWaves[0].placement);
+    const result = validateDrill(drill);
+    assert.equal(result.valid, false, kind);
+    assert.match(result.errors.join('; '), /mechanics\[0\].placement.mode/, kind);
+    assert.equal(parseDrillImport(JSON.stringify(drill)).ok, false, kind);
+  }
 });
 
 test('rejects unsupported versions, unknown fields and executable/unsafe identifiers', () => {
@@ -116,7 +189,8 @@ test('poisoned wall numeric objects and arrays are rejected without coercion or 
 });
 
 test('all numeric schema fields reject poisoned JSON values without throwing', () => {
-  const definition = createDrill({mechanics: MECHANIC_KINDS.map(kind => createMechanic(kind)), addWaves: [createAddWave()]});
+  const definition = createDrill({mechanics: MECHANIC_KINDS.map(kind => createMechanic(kind)), addWaves: [createAddWave(),
+    createAddWave({placement: {mode: 'points', selection: 'priority', points: [{x: 500, y: 280}]}})]});
   const paths = [];
   const collect = (value, path = []) => {
     for (const [key, item] of Object.entries(value)) {

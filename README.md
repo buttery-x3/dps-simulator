@@ -163,3 +163,7 @@ src/lib/browser-tools.js        Optional browser-tool registration
 Optional WebMCP tools read/start/pause/resume/stop sessions, configure validated loadouts / saved drill selection, switch Fight/Edit mode, select a target and attempt one equipped spell through the same actions as the UI. Unsupported browsers skip registration. No tool fast-forwards time, fabricates damage or automates movement. Registrations, animation callbacks, timers and movement state are cleaned up on unmount.
 
 Legacy `RaidSim` callers without a `drill` retain the old mechanics/layout constructor for compatibility with existing spell fixtures. The app always supplies a validated drill and never runs those legacy schedules. Browser tools reject old seed/layout/mechanics setup fields with a migration message; edit the selected drill instead.
+
+### ADD spawn-point lists
+
+ADD waves can use up to 32 numbered points with seeded random, ordered or first-free priority selection. Selection happens per add; ordered lists continue across waves until a fresh Start. All ADD placements avoid live adds and bosses by choosing the nearest clear position. Sentinel practice now uses two ordered points flanking the boss. In Edit, choose **New from default** to try the updated setup without removing saved drills. See [Training drills](docs/TRAINING_DRILLS.md#authored-spawn-points) for authoring, compatibility and collision rules.

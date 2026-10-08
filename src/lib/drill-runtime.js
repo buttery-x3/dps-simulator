@@ -1,5 +1,6 @@
 /** Integer-tick encounter runtime, intentionally separate from spell/projectile VFX. */
 import {compileDrill, DRILL_HZ as HZ, DRILL_LIMITS as LIMITS, DRILL_WORLD as WORLD} from './drills.js';
+import {ADD_RADIUS, findAddSpawnPosition, isAddSpawnPointFree, liveSpawnObstacles} from './add-placement.js';
 const TAU = Math.PI * 2;
 const radians = degrees => degrees * Math.PI / 180;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -25,7 +26,7 @@ export class DrillRuntime {
     const sim = this.sim;
     this.rngState = this.drill.seed;
     this.serial = 0; this.started = false; this.lastTick = sim.tick;
-    this.schedules = this.compiled.schedules.map(schedule => ({...schedule, nextTick: schedule.firstTick, occurrence: 0}));
+    this.schedules = this.compiled.schedules.map(schedule => ({...schedule, nextTick: schedule.firstTick, occurrence: 0, pointCursor: 0}));
     this.stats = {safeDeadlineOpportunities: 0, safeDeadlineReached: 0, safeDeadlineMisses: 0,
       safeHoldActiveTicks: 0, safeHoldInsideTicks: 0, safeHoldOutsideTicks: 0, projectileHits: 0};
     sim.player = {...sim.player, ...this.drill.playerStart};
@@ -69,22 +70,35 @@ export class DrillRuntime {
       this.spawn(schedule, occurrence);
     }
   }
+  addPosition(schedule) {
+    const spec = schedule.rule.placement;
+    if (spec.mode !== 'points') return this.position(spec);
+    if (spec.selection === 'random') return spec.points[Math.floor(this.random() * spec.points.length)];
+    if (spec.selection === 'ordered') return spec.points[schedule.pointCursor];
+    return spec.points.find(point => isAddSpawnPointFree(point, this.sim.targets, this.sim.tick)) ?? spec.points[0];
+  }
   spawn(schedule, occurrence) {
-    const sim = this.sim, rule = schedule.rule, point = this.position(rule.placement);
+    const sim = this.sim, rule = schedule.rule;
     if (schedule.kind === 'adds') {
-      const room = LIMITS.liveAdds - sim.targets.filter(target => target.kind === 'add').length;
-      const count = Math.min(rule.count, room);
-      const columns = Math.ceil(Math.sqrt(rule.count)), rows = Math.ceil(rule.count / columns);
+      const room = LIMITS.liveAdds - liveSpawnObstacles(sim.targets, sim.tick).filter(target => target.kind === 'add').length;
+      const count = Math.min(rule.count, Math.max(0, room));
+      let created = 0;
       for (let i = 0; i < count; i++) {
-        const spot = bounded({x: point.x + ((i % columns) - (columns - 1) / 2) * 46,
-          y: point.y + (Math.floor(i / columns) - (rows - 1) / 2) * 46});
+        // Resolve each target against earlier spawns in this wave and all other rules.
+        const spot = findAddSpawnPosition(this.addPosition(schedule), sim.targets, sim.tick);
+        if (!spot) break; // Arena full: skip the rest of this occurrence, with no growing queue.
         sim.targets.push({id: `drill-add:${++this.serial}`, name: `Echo ${occurrence + 1}.${i + 1}`, kind: 'add', ...spot,
-          r: 20, hp: rule.health, maxHp: rule.health, dots: {}, born: sim.tick,
+          r: ADD_RADIUS, hp: rule.health, maxHp: rule.health, dots: {}, born: sim.tick,
           expires: sim.tick + schedule.lifetimeTicks, ruleId: rule.id});
+        created++;
+        if (rule.placement.mode === 'points' && rule.placement.selection === 'ordered') {
+          schedule.pointCursor = (schedule.pointCursor + 1) % rule.placement.points.length;
+        }
       }
-      if (count) sim.emit('wave', {count, ruleId: rule.id});
+      if (created) sim.emit('wave', {count: created, ruleId: rule.id});
       return;
     }
+    const point = this.position(rule.placement);
     if (schedule.kind === 'projectiles') { this.spawnProjectiles(schedule, occurrence, point); return; }
     if (schedule.kind === 'circle' || schedule.kind === 'line') {
       // Consume random orientation even when the live cap prevents spawning.

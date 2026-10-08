@@ -78,7 +78,7 @@ This is a shared-fields fragment; add the fields for an add wave or mechanic bef
 
 - `first`: first occurrence time, 0–3600 seconds. A value of 0 fires when the session starts.
 - `frequency`: time between occurrences, 0.25–3600 seconds. Rules recur until the user stops.
-- `placement.mode`: `fixed`, `player` or `random`. Fixed uses the configured point; player samples the player's point at each occurrence; random samples a seeded point within the position bounds. `x` and `y` remain required and validated in every mode. Projectile walls use an arena-edge spawn plane instead of this point.
+- `placement.mode`: `fixed`, `player` or `random`. Fixed uses the configured point; player samples the player's point at spawn; random samples a seeded point within the position bounds. `x` and `y` remain required and validated for these three modes. ADD waves also accept the point-list shape below. Ground mechanics do not. Projectile walls use an arena-edge spawn plane instead of this point.
 
 Timing rounds to the nearest integer tick of a 60 Hz simulation. Frequencies are at least one tick after compilation. Delays range from 0–120 seconds. Positive durations and lifetimes range from 1/60–120 seconds. A zero-delay event resolves at its occurrence; it has no advance warning. Paused, ready, hidden-tab and unfocused time does not advance the encounter. Resuming never manufactures missed wall-clock time.
 
@@ -100,7 +100,35 @@ A complete rule, with the factory defaults:
 }
 ```
 
-`count` is an integer from 1–32; `health` is 1–10,000,000. Adds are stationary and arranged on a compact 46-unit grid around the sampled placement, clamped to the arena margins. They have 20-unit collision radii. Damage can defeat an add; otherwise it fades when its lifetime expires. Newly arrived adds immediately contribute to all selected maintenance-DoT denominators, including time before the first application.
+`count` is an integer from 1–32; `health` is 1–10,000,000. Adds remain stationary, with 20-unit collision radii. Damage can defeat an add; otherwise it fades when its lifetime expires. Newly arrived adds immediately contribute to all selected maintenance-DoT denominators, including time before the first application.
+
+#### Authored spawn points
+
+An ADD wave can replace its legacy placement with this additive version-1 shape:
+
+```json
+{
+  "mode": "points",
+  "selection": "ordered",
+  "points": [{"x": 430, "y": 180}, {"x": 570, "y": 180}]
+}
+```
+
+Lists require 1–32 points within the ordinary coordinate bounds. `selection` is required and is one of:
+
+- `random`: draw a seeded point separately for **each add**, including multiple adds in the same wave. Repeated choices are allowed; occupancy resolves them without stacking.
+- `ordered`: use point 1, then 2, and so on, wrapping to 1. Each rule has its own cursor. It advances after every successfully spawned add, continues across wave occurrences and Resume, and resets on a fresh Start. Skipped spawns do not consume ordered points.
+- `priority`: choose the first currently free point in authored order for each add. A death or expiry frees the point immediately. If all listed points are occupied, request point 1 and apply the same nearest-free resolver.
+
+Choose **Spawn-point list** in the ADD wave's Placement selector. Add, remove or reorder numbered points; at least one must remain. Select a numbered **Point** button or its arena marker to make it the active point. Edit its X/Y, click or drag in the world preview, or use arrow keys (Shift for 10-unit steps). The selected point has a gold ring. Ordered lists connect their numbered markers in order. These markers show requested origins; live occupancy can move a spawn. Switching back to a legacy placement keeps the selected point's coordinates. Point lists are deliberately unavailable to ground, projectile and safe-zone mechanics.
+
+#### Collision-free ADD placement
+
+Every ADD placement, including existing fixed/player/random rules, resolves separately per add. If the requested point is free, it stays exact. Otherwise the resolver picks the closest legal center with two units of clearance beyond the sum of radii, checking all live ADDs **and permanent bosses**, including targets spawned earlier in the same wave or by another rule. Dead/expired adds do not block points. The player is not an obstacle. There is no enemy movement or player-following AI.
+
+Equal-distance choices prefer up, left, down, then right (counterclockwise from up); a closer diagonal boundary wins over a farther cardinal candidate. The whole ADD circle stays within the arena and its center within the 30-unit margins. Instead of a coarse grid or unbounded retry loop, the resolver searches the finite circle-boundary intersections, arena-edge intersections and radial projections that can be the nearest free point. At the 64-ADD / 8-boss limits there are at most 72 obstacles. If no legal position exists, it skips the remainder of that occurrence, without overlap or a growing queue; later scheduled occurrences try again. Wave events report the actual created count.
+
+Legacy version-1 JSON remains accepted and exports with its original placement fields. The former centered grid is replaced by this general anti-overlap rule; random world placement now samples per add. Ground mechanics retain their existing placement behavior.
 
 ### Ground circles
 
@@ -231,7 +259,9 @@ An occurrence advances on schedule even if a cap leaves no room. Only objects th
 
 ## Default drill
 
-The saved fallback is `training-default`, **Sentinel practice**, seed 72821. The player starts at (500, 445), with one **Eternal sentinel** at (500, 160). A default add wave creates two 6200-health echoes around (255, 180) at 14 seconds and every 30 seconds; each lasts 40 seconds. A player-placed 76-radius circle first appears at 6 seconds and repeats every 6.4 seconds, with a 2-second warning and 1000 damage on impact. No projectile or safe-zone rule is enabled by default.
+The saved fallback is `training-default`, **Sentinel practice**, seed 72821. The player starts at (500, 445), with one **Eternal sentinel** at (500, 160). A default add wave creates two 6200-health echoes at ordered points (430, 180) and (570, 180), flanking the boss, at 14 seconds and every 30 seconds; each lasts 40 seconds. If earlier echoes are still alive when the next wave arrives, new echoes use the closest clear positions. A player-placed 76-radius circle first appears at 6 seconds and repeats every 6.4 seconds, with a 2-second warning and 1000 damage on impact. No projectile or safe-zone rule is enabled by default.
+
+On browser load, only the exact untouched historical `training-default` definition (including its old fixed (255, 180) placement and every other original setting) upgrades to the new Sentinel layout in memory. Loading does not write storage. Customized drills, including customized drills with that same ID, keep their authored settings. Direct imports do not migrate: an imported exact historical default is indistinguishable from the old built-in once saved and reloaded, and then also upgrades. **New from default** creates a separate draft using the current Sentinel layout, so it is always accessible without deleting existing drills or clearing storage. Save it when ready.
 
 New rule factories use the complete examples above. The **New** button starts an **Untitled drill** with the default player and permanent boss but no add waves or mechanics. The lower-level `createDrill()` factory copies the complete default layout and rules unless overridden, using the name **New training drill** and a fresh ID. The engine uses a compiled, immutable drill snapshot for each run; edits for future practice cannot mutate a stopped summary.
 
