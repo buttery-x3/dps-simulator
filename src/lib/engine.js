@@ -2,6 +2,8 @@
 import {CATALOGUE, DEFAULT_LOADOUT, compileLoadout, validateCatalogue, validateLoadout} from './catalogue.js';
 import {applyEffects} from './effect-handlers.js';
 import {DEFAULT_BINDINGS, keyLabel, validateBindings} from './keybindings.js';
+import {validateDrill} from './drills.js';
+import {DrillRuntime} from './drill-runtime.js';
 export const HZ = 60;
 export const WORLD = {width: 1000, height: 560, margin: 30};
 const ticks = seconds => Math.round(seconds * HZ);
@@ -12,12 +14,14 @@ const clone = value => JSON.parse(JSON.stringify(value));
 export const SPELLS = compileLoadout(DEFAULT_LOADOUT);
 
 export class RaidSim {
-  constructor({seed = 72821, loadout = DEFAULT_LOADOUT, mechanics = true, layout = 'spread', catalogue = CATALOGUE, keybindings = DEFAULT_BINDINGS} = {}) {
+  constructor({seed = 72821, loadout = DEFAULT_LOADOUT, mechanics = true, layout = 'spread', catalogue = CATALOGUE, keybindings = DEFAULT_BINDINGS, drill = null} = {}) {
     const validation = validateCatalogue(catalogue);
     if (!validation.valid) throw new Error(`Invalid catalogue: ${validation.errors.join('; ')}`);
     if (!['spread', 'clustered'].includes(layout)) throw new Error('Unknown target layout');
+    this.drill = null;
+    if (drill) this.configureDrill(drill);
     this.catalogue = catalogue;
-    this.seed = seed >>> 0 || 1;
+    this.seed = this.drill?.seed ?? (seed >>> 0 || 1);
     this.mechanics = mechanics;
     this.layout = layout;
     this.configureKeybindings(keybindings);
@@ -25,6 +29,15 @@ export class RaidSim {
     this.reset();
   }
   toTicks(seconds) { return ticks(seconds); }
+  configureDrill(drill) {
+    if (['running', 'paused'].includes(this.phase)) throw new Error('Stop the active session before changing its drill.');
+    const result = validateDrill(drill);
+    if (!result.valid) throw new Error(result.errors.join('; '));
+    const freeze = value => { Object.values(value).forEach(child => { if (child && typeof child === 'object') freeze(child); }); return Object.freeze(value); };
+    this.drill = freeze(clone(result.value));
+    this.seed = this.drill.seed;
+    if (this.phase === 'ready') this.reset();
+  }
   configureKeybindings(bindings) {
     if (this.phase === 'running') throw new Error('Pause the active session before changing keybindings.');
     const validation = validateBindings(bindings);
@@ -67,6 +80,8 @@ export class RaidSim {
     this.interrupts = 0; this.wastedShards = 0; this.breakdown = {}; this.targetDamage = {}; this.castCounts = {};
     this.coverage = Object.fromEntries(this.maintenanceDots.map(dot => [dot.id, {...dot, coveredTicks: 0, availableTicks: 0}]));
     this.nextWave = ticks(14); this.nextHazard = ticks(6); this.wave = 0; this.hazardCount = 0; this.eventId = 0; this.summary = null;
+    this.drillRuntime = this.drill ? new DrillRuntime(this, this.drill) : null;
+    this.drillRuntime?.reset();
     this.notice = {text: this.loadoutWarnings[0] || 'Choose your rhythm. Keep damage rolling and dodge red ground marks.', kind: this.loadoutWarnings.length ? 'warn' : 'info', until: ticks(5)};
   }
   // Compatibility alias for shared Astral charges, never stored spell charges.
@@ -75,7 +90,7 @@ export class RaidSim {
   rand() { let x = this.rngState; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.rngState = x >>> 0; return this.rngState / 4294967296; }
   emit(type, data = {}) { const e = {id: ++this.eventId, type, time: this.time, ...data}; this.events.push(e); if (this.events.length > 100) this.events.shift(); return e; }
   message(text, kind = 'info', seconds = 2) { this.notice = {text, kind, until: this.tick + ticks(seconds)}; }
-  start() { this.reset(); this.phase = 'running'; this.emit('start'); return true; }
+  start() { this.reset(); this.phase = 'running'; this.emit('start'); this.drillRuntime?.start(); return true; }
   pause(reason = 'Paused') { if (this.phase !== 'running') return false; this.phase = 'paused'; this.setMovement(0, 0); this.pauseReason = reason; this.accumulator = 0; return true; }
   resume() { if (this.phase !== 'paused') return false; this.phase = 'running'; this.accumulator = 0; return true; }
   stop() {
@@ -85,7 +100,7 @@ export class RaidSim {
   }
   target(id = this.selectedId) { return this.targets.find(target => target.id === id); }
   select(id) { if (!this.target(id)) return false; this.selectedId = id; this.emit('select', {targetId: id}); return true; }
-  cycleTarget() { const i = this.targets.findIndex(t => t.id === this.selectedId); return this.select(this.targets[(i + 1) % this.targets.length].id); }
+  cycleTarget() { if (!this.targets.length) return false; const i = this.targets.findIndex(t => t.id === this.selectedId); return this.select(this.targets[(i + 1) % this.targets.length].id); }
   setMovement(x, y) {
     x = Number.isFinite(x) ? clamp(x, -1, 1) : 0; y = Number.isFinite(y) ? clamp(y, -1, 1) : 0;
     const magnitude = Math.hypot(x, y); this.input = {x: magnitude > 1 ? x / magnitude : x, y: magnitude > 1 ? y / magnitude : y};
@@ -247,9 +262,10 @@ export class RaidSim {
   }
   removeTarget(id) {
     this.targets = this.targets.filter(t => t.id !== id);
+    delete this.targetDamage[id]; // Per-target detail is live-only; endless add IDs must not accumulate.
     this.links = this.links.filter(link => link.sourceId !== id)
       .map(link => ({...link, targetIds: link.targetIds.filter(targetId => targetId !== id)})).filter(link => link.targetIds.length);
-    if (this.selectedId === id) { this.selectedId = 'dummy'; this.emit('select', {targetId: 'dummy'}); }
+    if (this.selectedId === id) { this.selectedId = this.targets.find(target => target.kind === 'dummy')?.id ?? this.targets[0]?.id ?? null; this.emit('select', {targetId: this.selectedId}); }
     if (this.cast?.targetId === id && !(this.cast.kind === 'channel' && this.tick >= this.cast.ends)) { this.refundReservation(this.cast); this.cast = null; this.emit('target_lost'); }
   }
   spawnWave() {
@@ -279,6 +295,7 @@ export class RaidSim {
     if (this.phase !== 'running') return;
     this.tick++; this.time = this.tick / HZ;
     const p = this.player;
+    const previousPlayer = {...p};
     p.x = clamp(p.x + this.input.x * p.speed / HZ, WORLD.margin, WORLD.width - WORLD.margin);
     p.y = clamp(p.y + this.input.y * p.speed / HZ, WORLD.margin, WORLD.height - WORLD.margin);
     for (const [id, buff] of Object.entries(this.buffs)) if (buff.expires <= this.tick) delete this.buffs[id];
@@ -324,7 +341,8 @@ export class RaidSim {
         this.escaped++; this.emit('escape', {targetId: target.id}); this.removeTarget(target.id);
       }
     }
-    for (const h of this.hazards) {
+    if (this.drillRuntime) this.drillRuntime.step(previousPlayer);
+    else for (const h of this.hazards) {
       if (!h.hit && this.tick >= h.impact) {
         h.hit = true;
         if (this.isHit(h)) { this.damageTaken += 1000; this.hitsTaken++; this.emit('hit', {amount: 1000}); this.message('Ground hit · 1,000 damage taken', 'warn', 2.1); }
@@ -333,8 +351,8 @@ export class RaidSim {
     }
     this.hazards = this.hazards.filter(h => this.tick < h.ends);
     this.effects = this.effects.filter(e => this.tick < e.start + ticks(e.duration));
-    if (this.tick >= this.nextWave) { this.spawnWave(); this.nextWave += ticks(30); }
-    if (this.mechanics && this.tick >= this.nextHazard) { this.spawnHazard(); this.nextHazard += ticks(5.2 + this.rand() * 1.6); }
+    if (!this.drillRuntime && this.tick >= this.nextWave) { this.spawnWave(); this.nextWave += ticks(30); }
+    if (!this.drillRuntime && this.mechanics && this.tick >= this.nextHazard) { this.spawnHazard(); this.nextHazard += ticks(5.2 + this.rand() * 1.6); }
     while (this.damageEvents.length && this.damageEvents[0].tick <= this.tick - ticks(15)) this.damageEvents.shift();
     if (this.queue) {
       if (this.tick > this.queue.expires) this.queue = null;
@@ -351,7 +369,7 @@ export class RaidSim {
     const covered = coverageDetails.reduce((n, entry) => n + entry.coveredTicks, 0);
     const available = coverageDetails.reduce((n, entry) => n + entry.availableTicks, 0);
     const dotCoverage = coverageDetails.length ? available ? covered / available : 0 : null;
-    return {seed: this.seed, loadout: clone(this.loadout), layout: this.layout, mechanics: this.mechanics,
+    return {...(this.drillRuntime?.metrics() ?? {}), drillId: this.drill?.id ?? null, drillName: this.drill?.name ?? null, drill: this.drill ? clone(this.drill) : null, seed: this.seed, loadout: clone(this.loadout), layout: this.layout, mechanics: this.mechanics,
       keybindings: [...this.keybindings], keyLabels: this.keybindings.map(keyLabel),
       elapsed: duration, totalDamage: this.totalDamage, sessionDps: duration ? this.totalDamage / duration : 0,
       rollingDps: window ? this.damageEvents.reduce((sum, event) => sum + event.amount, 0) / window : 0, rollingSeconds: window,
@@ -362,9 +380,10 @@ export class RaidSim {
   snapshot() {
     return {phase: this.phase, ...this.metrics(), keybindings: [...this.keybindings], keyLabels: this.keybindings.map(keyLabel),
       player: {...this.player}, selectedId: this.selectedId,
-      targets: this.targets.map(target => ({id: target.id, name: target.name, kind: target.kind,
+      targets: this.targets.map(target => ({id: target.id, name: target.name, kind: target.kind, x: target.x, y: target.y,
         hp: target.kind === 'dummy' ? null : target.hp, maxHp: target.kind === 'dummy' ? null : target.maxHp,
         dots: Object.entries(target.dots).map(([id, dot]) => ({id, name: dot.name, seconds: Math.max(0, (dot.expires - this.tick) / HZ)}))})),
+      hazards: clone(this.hazards), hostileProjectiles: clone(this.hostileProjectiles ?? []), safeZones: clone(this.safeZones ?? []),
       resource: {...this.resource}, storedCharges: clone(this.spellCharges), buffs: clone(this.buffs),
       availableSpells: this.spells.map(spell => ({id: spell.id, name: spell.name, key: spell.key, keyCode: spell.keyCode, talent: spell.talentName,
         cooldownSeconds: Math.max(0, (this.cooldowns[spell.id] - this.tick) / HZ)})),

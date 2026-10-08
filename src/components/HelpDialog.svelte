@@ -8,7 +8,7 @@
     open = false,
     paused = false,
     active = false,
-    settings = { seed: 72821, loadout: DEFAULT_LOADOUT, mechanics: true, layout: 'spread' },
+    settings = { loadout: DEFAULT_LOADOUT },
     abilities = [],
     warnings = [],
     keys = SLOT_KEYS,
@@ -48,7 +48,7 @@
 
 <dialog id="helpDialog" aria-labelledby="helpTitle" bind:this={dialog} oncancel={cancel}>
   <div class="summary-heading">
-    <div><p class="eyebrow">CONTROLS · LOADOUT · SETUP</p><h2 id="helpTitle">Train at your own pace</h2></div>
+    <div><p class="eyebrow">CONTROLS · LOADOUT · DRILLS</p><h2 id="helpTitle">Train at your own pace</h2></div>
     <button id="closeHelp" class="icon-button" aria-label="Close help" onclick={() => onclose(false)}>×</button>
   </div>
   <p id="helpPauseNote" class="help-pause-note" hidden={!paused}>Your session is paused while Help is open.</p>
@@ -60,14 +60,9 @@
     </div>
     <button type="button" id="helpKeybindings" class="quiet" onclick={onkeybindings}>Customize spell keys</button>
     <details id="settings" bind:open={settingsOpen}>
-      <summary>Loadout &amp; session setup</summary>
+      <summary>Loadout &amp; talents</summary>
       <LoadoutPicker tooltipsEnabled={open && settingsOpen} {abilities} loadout={settings.loadout} {keys} disabled={active} {warnings} idPrefix="help-loadout" onchange={loadout => onsettings({loadout})} />
-      <div class="session-setup">
-        <label class="seed-label">Practice seed<input id="seedInput" type="number" value={settings.seed} min="1" max="4294967295" step="1" disabled={active} onchange={event => onsettings({seed: Number(event.currentTarget.value) || 72821})}></label>
-        <label class="seed-label">Echo layout<select id="layoutInput" value={settings.layout} disabled={active} onchange={event => onsettings({layout: event.currentTarget.value})}><option value="spread">Spread</option><option value="clustered">Clustered</option></select></label>
-        <label class="check-label"><input id="mechanicsInput" type="checkbox" checked={settings.mechanics} disabled={active} onchange={event => onsettings({mechanics: event.currentTarget.checked})}>Ground mechanics</label>
-        <p class="small">Setup applies to the next session. Clustered echoes make area and chain effects easier to practice. Same seed and actions reproduce the same drill. Ability choices, slot order and talents save automatically in this browser on this device. Practice seed, echo layout, ground mechanics and session results reset on reload. Nothing is saved to an account.</p>
-      </div>
+      <p class="small">Ability choices, slot order and talents save automatically in this browser on this device. Stop the session before changing your loadout. Saved drill edits apply to the next Start; Resume keeps the current run unchanged. Spell keys can be changed while paused. Nothing is saved to an account.</p>
     </details>
     <p class="inspiration">Expand your understanding of reality. Reach into the astral and weave its threads through the veil. Desktop keyboard recommended. Touch controls are available.</p>
   </div>
@@ -75,12 +70,16 @@
     <section class="spell-detail" aria-labelledby="abilityDetailsTitle"><h3 id="abilityDetailsTitle">Ability details</h3>
       <div class="ability-detail-choices" aria-label="Inspect equipped abilities">{#each equipped as ability (ability.id)}<button type="button" class="quiet" data-inspect-ability={ability.id} aria-pressed={inspectedAbility === ability.id} onclick={() => { inspectedAbility = ability.id; }}>{ability.name}</button>{/each}</div>
       {#if abilityDetail}<AbilityDetails detail={abilityDetail} />{:else}<p class="eyebrow" id="detailType">{currentDetail.type}</p><h2 id="detailName">{currentDetail.name}</h2><p id="detailText">{currentDetail.text}</p>{/if}</section>
-    <section class="help-note"><h3>The drill</h3><p>Stationary echoes join at 0:14, then every 30s. They fade after 40s. The sentinel never dies. Dodge red circles and lanes before their timers reach zero. Ground hits add 1,000 damage taken.</p></section>
+    <section class="help-note"><h3>Build your drill</h3><p>Open Edit to choose permanent boss targets, recurring add waves, and movement mechanics. Editing pauses a running session. Set each rule’s timing, position and damage, then Save drill and return to Fight. Saved changes apply on your next Start; Resume preserves the current run. The seed and your actions reproduce the same sequence. Sessions continue until you stop.</p><p>Dodge red circles, red lanes and orange-red projectiles. Cyan safe zones say ENTER BY for a one-time deadline or HOLD IN before a hold begins. An active hold turns green and says HOLD with its remaining time. Get the whole player disk inside; a check mark confirms you are fully inside that zone.</p></section>
   </div>
   <section id="metricHelp" class="help-note" bind:this={metricHelp}>
     <h3>Damage metrics</h3>
     <p id="metricExplanation" class="metric-explanation">Session DPS = exact total damage ÷ simulated active seconds. Rolling DPS = damage in the last 15 seconds ÷ min(15, active seconds). Paused, hidden, and unfocused time does not count. Displayed DPS is rounded; totals are exact.</p>
     <p>DoT coverage includes every selected maintenance DoT across all live targets, from each target’s arrival. Time before your first application counts too. With no maintenance DoTs selected, coverage is not applicable.</p>
+    <h3>Movement metrics</h3>
+    <p>Safe deadlines reached = deadlines where your whole player disk is inside at expiry ÷ completed deadlines. Arriving earlier and leaving before expiry does not count. A miss adds that rule’s configured damage. Pending countdowns are excluded; with no completed deadline, the ratio is not applicable.</p>
+    <p>Hold coverage = active hold time spent fully inside any active hold zone ÷ active hold time. Overlapping holds count once, and being inside any active hold zone is enough. Warm-up countdowns, ready time and paused time are excluded. Outside time adds a damage hit after each accumulated 60 outside ticks (one simulated second), using the largest damage value among the currently active hold zones. With no active hold time, coverage is not applicable.</p>
+    <p>Projectile hits count hostile projectile collisions. Damage taken includes configured ground hits, projectile hits, missed deadlines and hold-zone penalties. </p>
   </section>
   <section class="help-note"><h3>Read your action bar</h3><p>Hover or keyboard-focus an ability for its current talent and effects. Escape dismisses the tooltip. On touch, use the Ability details buttons above to inspect equipped abilities without casting or changing your loadout. Talent previews also appear below the loadout picker. The key on each icon follows its slot. A dark clock sweep shows spell cooldown; a cyan sweep shows the global cooldown. Violet highlights mark stored spell charges. Gold highlights mean enough Astral charges for a spender. Shared Astral charges and stored spell charges are separate.</p></section>
   <div class="summary-footer"><button id="helpDone" class="quiet" onclick={() => onclose(false)}>Close help</button><button id="helpResume" class="primary" hidden={!paused} onclick={() => onclose(true)}>Close and resume</button></div>

@@ -1,6 +1,9 @@
 <script>
   import {onMount, tick} from 'svelte';
   import {RaidSim} from './lib/engine.js';
+  import {DEFAULT_DRILL, validateDrill} from './lib/drills.js';
+  import {loadDrillLibrary, saveDrillLibrary} from './lib/drill-storage.js';
+  import DrillEditor from './components/DrillEditor.svelte';
   import {ABILITIES, DEFAULT_LOADOUT, TALENT_BUDGET, validateLoadout, validateLoadoutDraft, compileAbility} from './lib/catalogue.js';
   import {ArenaRenderer} from './lib/renderer.js';
   import {buildHud, num, duration} from './lib/hud.js';
@@ -15,17 +18,25 @@
   import {loadLoadout, saveLoadout} from './lib/loadout-storage.js';
   import {DEFAULT_BINDINGS, MOVE_KEYS, keyLabel, slotForEvent, loadBindings, saveBindings} from './lib/keybindings.js';
 
-  export const sim = new RaidSim();
+  export const sim = new RaidSim({drill: DEFAULT_DRILL});
   const held = new Set();
   const timers = new Set();
-  let arena, helpButton, keybindingsButton, pauseButton, combatPanel, sidebar;
+  let arena = $state();
+  let editor = $state();
+  let helpButton = $state(), keybindingsButton = $state(), pauseButton = $state(), combatPanel = $state(), sidebar = $state();
   let renderer;
   let frameId;
   let lastFrame = 0;
   let disposed = false;
   let unregisterTools = () => {};
   let view = $state.raw(buildHud(sim));
-  let settings = $state({seed: 72821, loadout: {abilities: [...DEFAULT_LOADOUT.abilities], talents: {...DEFAULT_LOADOUT.talents}}, mechanics: true, layout: 'spread'});
+  let settings = $state({loadout: {abilities: [...DEFAULT_LOADOUT.abilities], talents: {...DEFAULT_LOADOUT.talents}}});
+  let mode = $state('fight');
+  let library = $state.raw([JSON.parse(JSON.stringify(DEFAULT_DRILL))]);
+  let selectedDrillId = $state(DEFAULT_DRILL.id);
+  let drillNotice = $state('');
+  const selectedDrill = $derived(library.find(drill => drill.id === selectedDrillId) ?? library[0]);
+  const nextDrillChanged = $derived(active && JSON.stringify(selectedDrill) !== JSON.stringify(sim.drill));
   let loadoutOpen = $state(false);
   const loadoutValidation = $derived(validateLoadout(settings.loadout));
   const catalogue = $derived(ABILITIES.map(ability => compileAbility(ability.id, settings.loadout.talents[ability.id])));
@@ -54,11 +65,12 @@
     timers.add(id);
   }
   function focusArena() {
+    if (mode !== 'fight') return;
     arena?.focus({preventScroll: true});
     arenaFocused = document.activeElement === arena;
   }
   function focusAfterUpdate() {
-    tick().then(() => { if (!disposed && !helpOpen && !summaryOpen && !keybindingsOpen) focusArena(); });
+    tick().then(() => { if (!disposed && !helpOpen && !summaryOpen && !keybindingsOpen && mode === 'fight') focusArena(); });
   }
   function clearMovement() { held.clear(); sim.setMovement(0, 0); }
   function updateMovement() {
@@ -66,7 +78,42 @@
     renderHud();
   }
   function visibleAndFocused() { return !document.hidden && (!document.hasFocus || document.hasFocus()); }
-  function readSettings() { return {seed: Number(settings.seed) || 72821, loadout: {abilities: [...settings.loadout.abilities], talents: {...settings.loadout.talents}}, mechanics: settings.mechanics, layout: settings.layout}; }
+  function readSettings() { return {drillId: selectedDrillId, drill: JSON.parse(JSON.stringify(selectedDrill)), loadout: {abilities: [...settings.loadout.abilities], talents: {...settings.loadout.talents}}}; }
+  function persistDrills() {
+    const saved = saveDrillLibrary(library, selectedDrillId);
+    if (!saved.ok) drillNotice = 'Drills are available for this visit only. Browser storage is unavailable; export JSON to keep your work.';
+    return saved;
+  }
+  export function selectDrill(id) {
+    if (!library.some(drill => drill.id === id)) throw new Error('Drill does not exist in this browser library.');
+    selectedDrillId = id;
+    if (sim.phase === 'ready') sim.configureDrill(selectedDrill);
+    persistDrills(); renderHud();
+    return readSettings();
+  }
+  function updateLibrary(next, id) {
+    // Revalidate even component-originating data before replacing the library.
+    if (!Array.isArray(next) || !next.length || next.some(drill => !validateDrill(drill).valid)) throw new Error('Invalid drill library.');
+    library = next.map(drill => validateDrill(drill).value);
+    selectedDrillId = id;
+    if (sim.phase === 'ready') sim.configureDrill(selectedDrill);
+    if (persistDrills().ok) drillNotice = 'Drill library saved in this browser on this device.';
+    renderHud();
+  }
+  export function setMode(next) {
+    if (!['fight', 'edit'].includes(next)) throw new Error('Mode must be fight or edit.');
+    if (next === mode) return {ok: true, mode};
+    if (mode === 'edit' && editor?.prepareLeave && !editor.prepareLeave()) return {ok: false, reason: 'Unsaved draft kept open', mode};
+    if (next === 'edit' && sim.phase === 'running') pauseSession('Editing a drill. Resume keeps this run unchanged; Stop then Start applies your saved drill.');
+    clearMovement(); helpOpen = false; keybindingsOpen = false; summaryOpen = false; loadoutOpen = false; arenaFocused = false;
+    mode = next; lastFrame = performance.now();
+    if (next === 'fight') focusAfterUpdate();
+    return {ok: true, mode};
+  }
+  $effect(() => {
+    if (mode === 'fight' && arena) { renderer = new ArenaRenderer(arena); renderer.draw(sim); }
+    else renderer = null;
+  });
   function readSession() {
     const snapshot = sim.snapshot();
     const setup = readSettings();
@@ -74,19 +121,18 @@
     // must still describe the visible selection, rather than its last legal one.
     if (!active && !loadoutValidation.valid) { snapshot.availableSpells = []; snapshot.storedCharges = {}; }
     if (snapshot.phase === 'ready') { snapshot.loadout = setup.loadout; if (!loadoutValidation.valid) snapshot.spellNames = {}; }
-    return {...snapshot, setup, setupValid: loadoutValidation.valid, setupErrors: [...loadoutValidation.errors]};
+    return {...snapshot, mode, drillLibrary: library.map(drill => JSON.parse(JSON.stringify(drill))), editorDraft: mode === 'edit' ? editor?.getDraft?.() ?? null : null, setup, setupValid: loadoutValidation.valid, setupErrors: [...loadoutValidation.errors]};
   }
 
   export function startSession() {
+    if (mode !== 'fight') return {ok: false, reason: 'Return to Fight mode to start a session'};
     if (keybindingsOpen) return {ok: false, reason: 'Close keybindings before starting a session'};
     if (['running', 'paused'].includes(sim.phase)) return {ok: false, reason: 'Stop the active session first'};
     if (!visibleAndFocused()) return {ok: false, reason: 'Bring the game into view and focus it first'};
     if (!loadoutValidation.valid) return {ok: false, reason: loadoutValidation.errors.join(' ')};
     const current = readSettings();
-    sim.seed = current.seed >>> 0 || 1;
+    sim.configureDrill(current.drill);
     sim.configureLoadout(current.loadout);
-    sim.layout = current.layout;
-    sim.mechanics = current.mechanics;
     clearMovement();
     sim.start();
     if (renderer) { renderer.floats = []; renderer.lastEvent = 0; }
@@ -105,6 +151,7 @@
     clearMovement(); sim.pause(reason); renderHud(); return sim.snapshot();
   }
   export function resumeSession() {
+    if (mode !== 'fight') return {ok: false, reason: 'Return to Fight mode to resume the captured run'};
     if (keybindingsOpen) return {ok: false, reason: 'Save or cancel keybindings before resuming'};
     if (!visibleAndFocused()) return {ok: false, reason: 'Bring the game into view and focus it first'};
     helpOpen = false;
@@ -117,17 +164,20 @@
     helpOpen = false; keybindingsOpen = false; renderHud(); showSummary(); return sim.snapshot();
   }
   export function castSpell(id) {
+    if (mode !== 'fight') return {ok: false, reason: 'Return to Fight mode before casting'};
     if (helpOpen || summaryOpen || keybindingsOpen) return {ok: false, reason: 'Close the dialog before casting'};
     const result = sim.use(id);
     if (result.ok) { used = {...used, [id]: true}; later(() => { used = {...used, [id]: false}; }, 130); }
     renderHud(); return result;
   }
   export function selectTarget(id) {
+    if (mode !== 'fight') return {ok: false, reason: 'Return to Fight mode before selecting a target'};
     if (helpOpen || summaryOpen || keybindingsOpen) return {ok: false, reason: 'Close the dialog before selecting a target'};
     const ok = sim.select(id); renderHud(); return {ok, selectedId: sim.selectedId};
   }
   function showSummary() { if (sim.summary) { summary = sim.summary; summaryOpen = true; } }
   export function openHelp(section) {
+    if (mode !== 'fight') return;
     if (keybindingsOpen) return;
     if (sim.phase === 'running') pauseSession('Help is open. Resume when you’re ready.');
     clearMovement(); metricsSection = section === 'metrics'; helpOpen = true; renderHud();
@@ -138,6 +188,7 @@
     else tick().then(() => { if (!disposed) helpButton?.focus({preventScroll: true}); });
   }
   function openKeybindings() {
+    if (mode !== 'fight') return;
     if (sim.phase === 'running') pauseSession('Keybindings are open. Resume when you’re ready.');
     clearMovement(); helpOpen = false; keybindingsOpen = true;
   }
@@ -153,16 +204,17 @@
     renderHud(); closeKeybindings();
   }
   export function configure(next) {
+    if (mode !== 'fight') throw new Error('Return to Fight mode before changing the next-session setup.');
     if (keybindingsOpen) throw new Error('Close keybindings before changing setup.');
-    if (['running', 'paused'].includes(sim.phase)) throw new Error('Stop the active session before changing setup.');
-    if (next.seed !== undefined && (!Number.isInteger(next.seed) || next.seed < 1 || next.seed > 4294967295)) throw new Error('Seed must be an integer from 1 to 4294967295.');
+    if (Object.keys(next).some(key => !['loadout', 'drillId'].includes(key))) throw new Error('Legacy seed/layout/mechanics setup has moved to the drill editor. Configure a saved drillId.');
     if (next.loadout !== undefined) {
+      if (['running', 'paused'].includes(sim.phase)) throw new Error('Stop the active session before changing loadout.');
       const validation = validateLoadout(next.loadout);
       if (!validation.valid) throw new Error(validation.errors.join(' '));
     }
-    if (next.layout !== undefined && !['spread', 'clustered'].includes(next.layout)) throw new Error('Target layout must be spread or clustered.');
-    if (next.mechanics !== undefined && typeof next.mechanics !== 'boolean') throw new Error('Mechanics must be a boolean.');
-    updateSettings(next);
+    if (next.drillId !== undefined && !library.some(drill => drill.id === next.drillId)) throw new Error('Drill does not exist in this browser library.');
+    if (next.loadout !== undefined) updateSettings({loadout: next.loadout});
+    if (next.drillId !== undefined) selectDrill(next.drillId);
     return readSettings();
   }
   function updateSettings(next, persistLoadout = true) {
@@ -170,7 +222,6 @@
     if (next.loadout !== undefined && !validateLoadoutDraft(next.loadout).valid) return;
     if (next.loadout !== undefined) next = {...next, loadout: {abilities: [...next.loadout.abilities], talents: Object.fromEntries(Object.entries(next.loadout.talents ?? {}).filter(([, talent]) => talent && talent !== 'base'))}};
     settings = {...settings, ...next};
-    if (next.seed !== undefined) sim.seed = next.seed;
     if (next.loadout !== undefined) {
       if (validateLoadout(next.loadout).valid) sim.configureLoadout(next.loadout);
       if (persistLoadout) {
@@ -178,13 +229,11 @@
         loadoutNotice = result.ok ? '' : 'Loadout applied for this visit only. Browser storage is unavailable.';
       }
     }
-    if (next.layout !== undefined) sim.layout = next.layout;
-    if (next.mechanics !== undefined) sim.mechanics = next.mechanics;
     renderHud();
   }
-  function cycleTarget() { if (helpOpen || summaryOpen || keybindingsOpen) return; sim.cycleTarget(); renderHud(); }
+  function cycleTarget() { if (mode !== 'fight' || helpOpen || summaryOpen || keybindingsOpen) return; sim.cycleTarget(); renderHud(); }
   function pointerTarget(event) {
-    if (helpOpen || summaryOpen || keybindingsOpen) return;
+    if (mode !== 'fight' || helpOpen || summaryOpen || keybindingsOpen) return;
     focusArena();
     if (!renderer) return;
     const {x, y} = renderer.pointFromClient(event.clientX, event.clientY);
@@ -192,7 +241,7 @@
     if (target && Math.hypot(target.x - x, target.y - y) < Math.max(38, target.r + 15)) selectTarget(target.id);
   }
   function keyDown(event) {
-    if (helpOpen || summaryOpen || keybindingsOpen || event.target !== arena || document.activeElement !== arena || event.isComposing || event.keyCode === 229 || event.key === 'Process' || event.key === 'Dead' || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+    if (mode !== 'fight' || helpOpen || summaryOpen || keybindingsOpen || event.target !== arena || document.activeElement !== arena || event.isComposing || event.keyCode === 229 || event.key === 'Process' || event.key === 'Dead' || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
     if (MOVE_KEYS.includes(event.code)) { event.preventDefault(); if (sim.phase === 'running' && !event.repeat) { held.add(event.code); updateMovement(); } return; }
     if (event.code === 'Escape') { event.preventDefault(); pauseSession('Keyboard released. Resume when you’re ready.'); pauseButton?.focus(); return; }
     if (event.code === 'Tab') { event.preventDefault(); if (!event.repeat) cycleTarget(); return; }
@@ -207,7 +256,7 @@
     const id = sim.spells[slotForEvent(event, bindings)]?.id;
     if (id) { event.preventDefault(); if (!event.repeat) castSpell(id); }
   }
-  function keyUp(event) { if (MOVE_KEYS.includes(event.code)) { event.preventDefault(); held.delete(event.code); updateMovement(); } }
+  function keyUp(event) { if (mode !== 'fight') return; if (MOVE_KEYS.includes(event.code)) { event.preventDefault(); held.delete(event.code); updateMovement(); } }
   function arenaBlur() {
     arenaFocused = false; clearMovement(); renderHud();
     later(() => {
@@ -220,7 +269,7 @@
     clearMovement(); renderHud();
   }
   function touchMove(event, x, y) {
-    if (helpOpen || summaryOpen || keybindingsOpen || sim.phase !== 'running') return;
+    if (mode !== 'fight' || helpOpen || summaryOpen || keybindingsOpen || sim.phase !== 'running') return;
     event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
     clearMovement(); sim.setMovement(x, y); renderHud();
   }
@@ -237,17 +286,21 @@
     if (storedLoadout.status === 'corrupt') loadoutNotice = 'Saved loadout could not be restored. Using the default abilities.';
     if (storedLoadout.status === 'repaired') loadoutNotice = 'Saved loadout updated: unavailable or invalid choices were removed. Review your loadout before starting.';
     if (storedLoadout.status === 'unavailable') loadoutNotice = 'Browser storage is unavailable. Loadout changes will last for this visit only.';
-    renderer = new ArenaRenderer(arena);
+    const savedDrills = loadDrillLibrary();
+    library = savedDrills.library; selectedDrillId = savedDrills.selectedId;
+    sim.configureDrill(selectedDrill); renderHud();
+    if (savedDrills.status === 'corrupt') drillNotice = 'Saved drills could not be restored. The starter drill is available; the old browser data has not been overwritten.';
+    if (savedDrills.status === 'unavailable') drillNotice = 'Browser storage is unavailable. Export JSON to keep drills beyond this visit.';
     lastFrame = performance.now();
-    unregisterTools = registerTrainingTools(document.modelContext, {sim, readSession, startSession, pauseSession, resumeSession, stopSession, configure, selectTarget, castSpell});
+    unregisterTools = registerTrainingTools(document.modelContext, {sim, readSession, startSession, pauseSession, resumeSession, stopSession, configure, selectTarget, castSpell, setMode});
     function frame(now) {
       const delta = (now - lastFrame) / 1000;
       lastFrame = now;
-      if (sim.phase === 'running') {
+      if (mode === 'fight' && sim.phase === 'running') {
         if (delta > .25) pauseSession('The browser stalled. Paused to keep the clock fair.');
         else sim.advance(delta);
       }
-      renderer.draw(sim);
+      if (mode === 'fight') renderer?.draw(sim);
       renderHud();
       frameId = requestAnimationFrame(frame);
     }
@@ -267,15 +320,22 @@
 <main class="app">
   <header class="masthead">
     <div class="identity"><span class="brand-mark" aria-hidden="true">◈</span><div><h1>Veilweaver</h1><p>RANGED RAID LAB</p></div></div>
-    <div class="session-controls">
+    <div class="mode-control" role="group" aria-label="Mode"><span>Mode:</span><button id="fightMode" aria-pressed={mode === 'fight'} onclick={() => setMode('fight')}>Fight</button><button id="editMode" aria-pressed={mode === 'edit'} onclick={() => setMode('edit')}>Edit</button></div>
+    {#if mode === 'fight'}<div class="session-controls">
       <button bind:this={helpButton} id="helpBtn" class="help-button" aria-label="Open help and session setup" onclick={() => openHelp()}>? <span>Help</span></button>
       <button bind:this={keybindingsButton} id="keybindingsBtn" class="quiet" onclick={openKeybindings}>Keybindings</button>
       <span id="stateLabel" class="state-label" class:active={view.phase === 'running'}>{stateLabel}</span>
       <button bind:this={pauseButton} id="pauseBtn" class="quiet" hidden={!active} onclick={() => view.phase === 'paused' ? resumeSession() : pauseSession()}>{view.phase === 'paused' ? 'Resume' : 'Pause'}</button>
       <button id="stopBtn" class="quiet" disabled={!active} onclick={stopSession}>Stop</button>
       <button id="startBtn" class="primary" hidden={active} disabled={view.phase !== 'stopped' && !loadoutValidation.valid} onclick={() => view.phase === 'stopped' ? showSummary() : startSession()}>{view.phase === 'stopped' ? 'Session summary' : 'Start session'}</button>
-    </div>
+    </div>{/if}
   </header>
+  {#if drillNotice}<p id="drillNotice" class="keybinding-notice" role="status">{drillNotice}</p>{/if}
+  {#if mode === 'edit'}
+    {#if active}<p class="editor-run-note">Paused run: {sim.drill?.name}. Return to Fight to resume it unchanged. To use saved edits, Stop the run and start a new session.</p>{/if}
+    <DrillEditor bind:this={editor} {library} selectedId={selectedDrillId} onlibrarychange={updateLibrary} onselect={selectDrill} onnotice={notice => { drillNotice = notice; }} />
+  {:else}
+  <section class="drill-selection" aria-label="Training drill selection"><label for="drillSelect">Training drill <select id="drillSelect" value={selectedDrillId} onchange={event => selectDrill(event.currentTarget.value)}>{#each library as drill (drill.id)}<option value={drill.id}>{drill.name}</option>{/each}</select></label><span>{active ? `Active run: ${sim.drill?.name}` : 'Endless practice · Stop whenever you’re ready'}</span>{#if nextDrillChanged}<span class="next-drill-note">Selection applies to your next Start. Resume keeps this run unchanged.</span>{/if}</section>
   {#if loadoutNotice}<p id="loadoutNotice" class="keybinding-notice" role="status">{loadoutNotice}</p>{/if}
   {#if keybindingNotice}<p id="keybindingNotice" class="keybinding-notice" role="status">{keybindingNotice}</p>{/if}
   <section class="metrics" aria-label="Session metrics">
@@ -325,12 +385,13 @@
       <section class="targets-panel"><div class="section-label"><h2>Targets</h2><span id="targetCount">{view.targets.length} active</span></div><div id="targetList">
         {#each view.targets as target (target.id)}
           <button type="button" class="target-card" class:selected={target.selected} data-target={target.id} aria-pressed={target.selected} title={target.title} onpointerdown={event => event.preventDefault()} onclick={() => { selectTarget(target.id); focusArena(); }}>
-            <span class="target-top"><span class="target-name">{target.name}</span><span class="target-kind">{target.dummy ? 'DUMMY' : 'PRIORITY'}</span></span>
+            <span class="target-top"><span class="target-name">{target.name}</span><span class="target-kind">{target.dummy ? 'BOSS' : 'ADD'}</span></span>
             <span class="target-bottom"><span class={`target-dot ${target.dotClass}`}>{target.dot}</span><span class="target-health">{target.hp}</span></span>
             <span class="target-hp" hidden={target.dummy}><i style:width={`${target.healthPercent}%`}></i></span>
           </button>
         {/each}
       </div></section>
+      <section class="safe-counters" aria-label="Safe-zone metrics"><div><span>Safe zones reached</span><strong id="safeDeadlineCount">{view.metrics.safeDeadlineReached ?? 0} / {view.metrics.safeDeadlineOpportunities ?? 0}</strong><small>{view.metrics.safeDeadlineMisses ?? 0} missed · resolved deadlines</small></div><div><span>Time in safe zones</span><strong id="safeHoldTime">{(view.metrics.safeHoldInsideSeconds ?? 0).toFixed(1)} / {(view.metrics.safeHoldActiveSeconds ?? 0).toFixed(1)}s</strong><small>Inside / active hold time · overlapping zones counted once</small></div></section>
       <section class="compact-counters"><div><span>Echoes</span><strong id="killCount">{view.metrics.kills}</strong></div><div><span>DoT coverage</span><strong id="brandUptime">{view.metrics.dotCoverage === null ? '—' : `${Math.round(view.metrics.dotCoverage * 100)}%`}</strong></div></section>
     </aside>
   </div>
@@ -338,4 +399,5 @@
   <HelpDialog keys={keyLabels} onkeybindings={openKeybindings} open={helpOpen} paused={view.phase === 'paused'} {active} {settings} onsettings={updateSettings} onclose={closeHelp} {detail} abilities={catalogue} warnings={loadoutValidation.warnings} {metricsSection} />
   {#if keybindingsOpen}<KeybindingsDialog {bindings} spells={equippedAbilities} paused={view.phase === 'paused'} onsave={applyKeybindings} onclose={closeKeybindings} />{/if}
   <SummaryDialog open={summaryOpen} {summary} canStart={loadoutValidation.valid} onclose={() => { summaryOpen = false; }} onrestart={startSession} />
+  {/if}
 </main>

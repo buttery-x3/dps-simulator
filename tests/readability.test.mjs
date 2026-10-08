@@ -393,8 +393,9 @@ test('browser tools expose dynamic loadouts and reject unselected spell attempts
   });
   const configure = registry.get('configure_training_session');
   assert.equal(configure.inputSchema.properties.loadout.type, 'object');
-  assert.deepEqual(configure.inputSchema.properties.layout.enum, ['spread', 'clustered']);
-  const input = {loadout: loadout(['veil-bolt'], {'veil-bolt': 'v3'}), layout: 'clustered'};
+  assert.equal(configure.inputSchema.properties.drillId.type, 'string');
+  assert.equal(configure.inputSchema.properties.layout, undefined);
+  const input = {loadout: loadout(['veil-bolt'], {'veil-bolt': 'v3'}), drillId: 'training-default'};
   await configure.execute(input); assert.deepEqual(configured, [input]);
   const cast = registry.get('cast_training_spell');
   assert.equal(cast.inputSchema.properties.spell.enum, undefined);

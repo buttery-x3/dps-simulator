@@ -98,7 +98,7 @@ describe('Svelte parity', () => {
     key('Digit3'); expect(app.sim.cast.spell).toBe('gloam-thread');
     key('KeyW'); expect(app.sim.input.y).toBe(-1); expect(app.sim.cast).toBe(null);
     key('KeyW', 'keyup'); expect(app.sim.input.y).toBe(0);
-    const outside = key('Digit1', 'keydown', $('seedInput')); expect(outside.defaultPrevented).toBe(false);
+    const outside = key('Digit1', 'keydown', $('drillSelect')); expect(outside.defaultPrevented).toBe(false);
   });
   test('Tab cycles, repeats do not recast, and Escape pauses/releases focus', () => {
     flushSync(() => app.startSession()); app.sim.spawnWave(); update();
@@ -109,7 +109,7 @@ describe('Svelte parity', () => {
   test('Help pause/close/Escape/explicit resume preserve time and clear movement', async () => {
     flushSync(() => app.startSession()); key('KeyW'); click('helpBtn');
     expect(app.sim.phase).toBe('paused'); expect(app.sim.input.y).toBe(0);
-    expect($('helpDialog').open).toBe(true); expect($('seedInput').disabled).toBe(true);
+    expect($('helpDialog').open).toBe(true); expect($('seedInput')).toBeNull(); expect(document.querySelector('#helpDialog .loadout-picker')).not.toBeNull();
     const time = app.sim.time; app.sim.advance(100); expect(app.sim.time).toBe(time);
     $('helpDialog').dispatchEvent(new Event('cancel', {cancelable: true})); flushSync();
     expect($('helpDialog').open).toBe(false); expect(app.sim.phase).toBe('paused');
@@ -126,16 +126,16 @@ describe('Svelte parity', () => {
     document.hasFocus = () => true; flushSync(() => app.resumeSession());
     window.dispatchEvent(new Event('blur')); flushSync(); expect(app.sim.phase).toBe('paused');
   });
-  test('setup and tool settings apply selected slots, talents and echo layout', () => {
+  test('setup applies slots and talents while legacy encounter fields move into the drill editor', () => {
     const loadout = {abilities: ['chain-strike', 'gloam-thread'], talents: {'gloam-thread': 'v1'}};
-    flushSync(() => app.configure({seed: 123, loadout, mechanics: false, layout: 'clustered'}));
-    expect($('seedInput').value).toBe('123'); expect($('mechanicsInput').checked).toBe(false);
-    expect($('layoutInput').value).toBe('clustered');
+    flushSync(() => app.configure({loadout}));
+    expect($('seedInput')).toBeNull(); expect($('mechanicsInput')).toBeNull(); expect($('layoutInput')).toBeNull();
     expect([...document.querySelectorAll('.ability')].map(button => button.dataset.spell)).toEqual(loadout.abilities);
     expect(document.querySelector('[data-spell="chain-strike"]').getAttribute('aria-label')).toMatch(/^1\./);
+    expect(() => app.configure({seed: 123})).toThrow(/drill editor/);
     flushSync(() => app.startSession()); expect(app.sim.loadout).toEqual(loadout);
-    expect(app.sim.layout).toBe('clustered');
-    expect(() => app.configure({seed: 4})).toThrow(/Stop/);
+    expect(app.sim.drill.name).toBe('Sentinel practice');
+    expect(() => app.configure({loadout})).toThrow(/Stop/);
   });
   test('live targets and selected DoT timers render through keyed Svelte elements', () => {
     flushSync(() => app.startSession()); app.sim.spawnWave(); update();
@@ -173,11 +173,11 @@ describe('Svelte parity', () => {
     flushSync(() => app.startSession()); runFrame(now + 100); expect(app.sim.time).toBeCloseTo(.1);
     runFrame(now + 1100); expect(app.sim.phase).toBe('paused'); expect(app.sim.time).toBeCloseTo(.1);
   });
-  test('eight optional tools validate input and share UI actions/read-back', async () => {
-    expect(tools.size).toBe(8);
+  test('nine optional tools validate input and share UI actions/read-back', async () => {
+    expect(tools.size).toBe(9);
     for (const tool of tools.values()) expect(tool.inputSchema.additionalProperties).toBe(false);
     expect(tools.get('read_training_session').annotations.readOnlyHint).toBe(true);
-    await tools.get('configure_training_session').execute({seed: 123, mechanics: false});
+    await tools.get('configure_training_session').execute({drillId: 'training-default'});
     await tools.get('start_training_session').execute({});
     await tools.get('cast_training_spell').execute({spell: 'lingering-glimmer'});
     app.sim.advance(3);
@@ -188,7 +188,7 @@ describe('Svelte parity', () => {
     await tools.get('pause_training_session').execute({}); expect(app.sim.phase).toBe('paused');
     await tools.get('resume_training_session').execute({}); expect(app.sim.phase).toBe('running');
     await tools.get('stop_training_session').execute({}); flushSync(); expect($('summaryDialog').open).toBe(true);
-    await expect(tools.get('configure_training_session').execute({seed: -1})).rejects.toThrow(/Seed/);
+    await expect(tools.get('configure_training_session').execute({seed: -1})).rejects.toThrow(/Invalid/);
   });
   test('Stop while Help is open replaces Help with the preserved summary', async () => {
     flushSync(() => app.startSession()); click('helpBtn');

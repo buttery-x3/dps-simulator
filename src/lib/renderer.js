@@ -10,12 +10,18 @@ export class ArenaRenderer {
  resize(){const r=this.canvas.getBoundingClientRect();const d=Math.min(globalThis.devicePixelRatio||1,2);const w=Math.round(r.width*d),h=Math.round(r.height*d);if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h;}}
  pointFromClient(clientX,clientY){const r=this.canvas.getBoundingClientRect(),scale=Math.min(r.width/WORLD.width,r.height/WORLD.height),ox=(r.width-WORLD.width*scale)/2,oy=(r.height-WORLD.height*scale)/2;return{x:(clientX-r.left-ox)/scale,y:(clientY-r.top-oy)/scale};}
  draw(s){this.resize();const c=this.ctx,w=this.canvas.width,h=this.canvas.height,scale=Math.min(w/WORLD.width,h/WORLD.height),ox=(w-WORLD.width*scale)/2,oy=(h-WORLD.height*scale)/2;c.setTransform(1,0,0,1,0,0);c.fillStyle='#0d1622';c.fillRect(0,0,w,h);c.setTransform(scale,0,0,scale,ox,oy);this.floor(c,s);
-   // Ground telegraphs remain under actors and spells; their heavy outlines are redrawn on top.
+   c.save();c.beginPath();c.rect(0,0,WORLD.width,WORLD.height);c.clip();
+   // Mechanics fill the floor beneath actors; crisp boundaries and timers stay above spell VFX.
+   (s.safeZones||[]).forEach(zone=>this.safeZone(c,zone,s,false));
    s.hazards.forEach(h=>this.hazard(c,h,s,false));
+   (s.hostileProjectiles||[]).forEach(projectile=>this.hostileProjectile(c,projectile,s,false));
    this.dotLabelBounds=[];this.bindingLinks(c,s);
    [...s.targets].sort((a,b)=>a.y-b.y).forEach(t=>this.target(c,t,s));
-   this.magic(c,s);this.player(c,s);s.hazards.forEach(h=>this.hazard(c,h,s,true));
-   this.damageText(c,s);this.annotations(c,s);
+   this.magic(c,s);this.player(c,s);
+   (s.safeZones||[]).forEach(zone=>this.safeZone(c,zone,s,true));
+   s.hazards.forEach(h=>this.hazard(c,h,s,true));
+   (s.hostileProjectiles||[]).forEach(projectile=>this.hostileProjectile(c,projectile,s,true));
+   this.damageText(c,s);this.annotations(c,s);c.restore();
  }
  floor(c,s){
    c.fillStyle='#101824';c.fillRect(0,0,1000,560);
@@ -40,6 +46,49 @@ export class ArenaRenderer {
    }c.restore();
  }
  warningLabel(c,label,x,y){c.font='600 13px "Segoe UI", sans-serif';const width=c.measureText(label).width+18;c.fillStyle='#26131b';c.fillRect(x-width/2,y-14,width,22);text(c,label,x,y+2,13,'#ffb6bf','center',700);}
+ safeZone(c,zone,s,outline){
+  const deadline=zone.kind==='safe-deadline',active=s.tick>=zone.active;
+  if(s.tick<zone.born||s.tick>=(deadline?zone.active:zone.ends))return;
+  const inside=Math.hypot(s.player.x-zone.x,s.player.y-zone.y)<=Math.max(0,zone.r-s.player.r)+1e-9;
+  const color=active?'#61efae':'#67e3ed',remaining=Math.max(0,((active?zone.ends:zone.active)-s.tick)/HZ);
+  c.save();
+  if(!outline){
+    circle(c,zone.x,zone.y,zone.r,active?'#30d78a29':'#35cedb1c');
+    // Inward markers and a cool palette identify a destination, unlike red hatched hazards.
+    for(let i=0;i<4;i++){const angle=i*TAU/4,outer=zone.r-9,inner=zone.r-19;c.save();c.translate(zone.x,zone.y);c.rotate(angle);poly(c,[[outer,-5],[inner,0],[outer,5]],active?'#61efae70':'#67e3ed70');c.restore();}
+    circle(c,zone.x,zone.y,Math.max(0,zone.r-s.player.r),null,active?'#61efae22':'#67e3ed22',1);
+  }else{
+    c.setLineDash(active?[]:deadline?[9,4]:[3,5]);circle(c,zone.x,zone.y,zone.r,null,color,active?3:2.5);c.setLineDash([]);
+    const span=active?zone.ends-zone.active:zone.active-zone.born;
+    const progress=Math.max(0,Math.min(1,((active?zone.ends:zone.active)-s.tick)/Math.max(1,span)));
+    c.beginPath();c.arc(zone.x,zone.y,Math.max(0,zone.r-5),-Math.PI/2,-Math.PI/2+TAU*progress);c.lineWidth=3;c.strokeStyle=color;c.stroke();
+    // A check appears only when the whole collision disk is inside this particular zone.
+    if(inside){c.strokeStyle=color;c.lineWidth=2.5;c.beginPath();c.moveTo(zone.x-7,zone.y);c.lineTo(zone.x-2,zone.y+5);c.lineTo(zone.x+8,zone.y-6);c.stroke();}
+    else{circle(c,zone.x,zone.y,5,null,color,1.5);}
+    const label=deadline?`ENTER BY ${remaining.toFixed(1)}s`:active?`HOLD · ${remaining.toFixed(1)}s`:`HOLD IN ${remaining.toFixed(1)}s`;
+    c.font='700 13px "Segoe UI", sans-serif';const width=c.measureText(label).width+20;
+    const x=Math.max(width/2+8,Math.min(WORLD.width-width/2-8,zone.x)),y=Math.max(84,Math.min(WORLD.height-22,zone.y-zone.r-12));
+    c.fillStyle='#0b2429';c.fillRect(x-width/2,y-15,width,24);c.lineWidth=1;c.strokeStyle=color;c.strokeRect(x-width/2,y-15,width,24);text(c,label,x,y+2,13,color,'center',700);
+  }
+  c.restore();
+ }
+ hostileProjectile(c,projectile,s,outline){
+  if(s.tick<projectile.born||s.tick>=projectile.expires)return;
+  const angle=Math.atan2(projectile.vy,projectile.vx),r=projectile.r;
+  c.save();c.translate(projectile.x,projectile.y);c.rotate(angle);
+  if(!outline){
+    // A tapered red wake communicates travel direction; friendly missiles keep their spell color.
+    poly(c,[[-r-38,-2],[-r-7,-r*.72],[r*.25,0],[-r-7,r*.72],[-r-38,2]],'#fa4b363f');
+    c.strokeStyle='#ff693a';c.lineWidth=3;c.beginPath();c.moveTo(-r-28,0);c.lineTo(-r+2,0);c.stroke();
+    circle(c,0,0,r,'#e63f36');
+  }else{
+    circle(c,0,0,r,null,'#ffac69',2.5);
+    // The forward chevron stays legible when a spell effect crosses the projectile.
+    poly(c,[[-r*.2,-r*.58],[r*.65,0],[-r*.2,r*.58]],'#ffd299');
+    c.strokeStyle='#ff693a';c.lineWidth=2;c.beginPath();c.moveTo(-r-10,-5);c.lineTo(-r-3,0);c.lineTo(-r-10,5);c.stroke();
+  }
+  c.restore();
+ }
  target(c,t,s){
   const selected=s.selectedId===t.id;const dummy=t.kind==='dummy';
   const definitions=maintenanceDots(s.spells||[]);
@@ -59,7 +108,7 @@ export class ArenaRenderer {
     poly(c,[[t.x-4,t.y-6],[t.x+4,t.y-6],[t.x+6,t.y+1],[t.x-6,t.y+1]],'#e3c2f2');
     c.fillStyle='#090e17';c.fillRect(t.x-26,t.y+36,52,4);c.fillStyle='#9c82b5';c.fillRect(t.x-26,t.y+36,52*t.hp/t.maxHp,4);
   }
-  const name=dummy?'SENTINEL':t.name.toUpperCase();text(c,name,t.x,t.y+(dummy?54:59),12,selected?'#e6d5a9':'#a6b1c3','center',600);
+  const name=(t.name||(dummy?'Sentinel':'Echo')).toUpperCase();text(c,name,t.x,t.y+(dummy?54:59),12,selected?'#e6d5a9':'#a6b1c3','center',600);
   this.dotLabels(c,t,s,dots);
  }
  dotLabels(c,t,s,dots){

@@ -14,7 +14,7 @@ npm ci
 npm run dev
 ```
 
-Open the local address printed by Vite (usually <http://127.0.0.1:5173>). The default server binds to this computer. `npm start` is an alias. There is no backend, account or analytics. Spell keybindings and selected loadouts are saved locally in the browser.
+Open the local address printed by Vite (usually <http://127.0.0.1:5173>). The default server binds to this computer. `npm start` is an alias. There is no backend, account or analytics. Spell keybindings, selected loadouts and named drills are saved locally in the browser.
 
 ## Choose a loadout
 
@@ -26,7 +26,7 @@ Start immediately with five base abilities, or open **Your Loadout → Customize
 - The five ordered slots default to **1 / 2 / 3 / 4 / 5**. Use slot arrows to rearrange abilities; customized keys stay with their slots.
 - Focus or hover an orb for its description. Click a selected talent again to remove it. Native buttons support keyboard selection.
 - A warning explains a spender without a generator. The loadout remains legal for experimentation.
-- Choose clustered or spread stationary echoes to compare area attacks and chain bounces.
+- Use Edit to position permanent bosses and configure add waves for area attacks and chain bounces.
 - Setup is locked during an active or paused run. Stop first; the completed summary stays frozen until the next session.
 
 The default selects Veil Bolt, Lingering Glimmer, Gloam Thread, Astral Flare and Area Pulse, with all five talent points unspent. Destructive Rift, Chain Strike and Focused Energy are available in the catalogue. Rift is intentionally the only Astral charge spender; generation comes from talents. Shared **Astral charges** are capped at three and start at zero. An ability’s **stored spell charges** are a separate pool of uses that recharge over time; they never pay an Astral charge cost.
@@ -42,7 +42,7 @@ The 8 abilities and 24 talents are provisional prototype tuning, not a balanced 
 - Partial selections and intentionally empty setup drafts survive refresh. An empty draft still requires selecting at least one ability before starting; at most five abilities and five talents are accepted, with one talent per selected ability.
 - If the catalogue changes, valid abilities retain their order and valid talents survive; stale, duplicate or invalid choices are removed with a notice. Malformed/unsupported data or a completely obsolete selection falls back to the default abilities. Loading never overwrites saved data.
 - If browser storage is blocked or full, changes still apply for this visit and a visible notice explains that they could not be saved.
-- Refresh starts a fresh ready session. Combat state, time, metrics, results, seed, ground mechanics and echo layout are not saved.
+- Refresh starts a fresh ready session. Combat state, time, metrics and results are not saved. Drill definitions, including their seed and mechanics, use an independent local library.
 
 ## Play
 
@@ -55,7 +55,19 @@ The 8 abilities and 24 talents are provisional prototype tuning, not a balanced 
 
 Instant spells work while moving. Ordinary casts and channels require stillness; Drifting Flare is a moving cast. Moving, losing a target, or clipping a channel stops future ticks. Gloam Storm commits its cooldown at channel start even when interrupted. Full Conduit grants an Astral charge only after a complete Gloam Thread channel, including a lethal final tick.
 
-The sentinel never dies. Two stationary echoes arrive at 14 seconds and every 30 seconds afterward, up to four live echoes. Each fades after 40 seconds. Circles and lanes telegraph ground impacts; a hit adds 1,000 damage taken without ending the session. There is no victory condition or enemy AI. Touch movement and targeting are included; desktop keyboard play remains primary.
+The starter drill has one permanent sentinel, two stationary adds beginning at 14 seconds, and player-targeted ground circles. Use **Mode: Fight / Edit** in the header to replace the fight interface with the drill editor. Runs remain endless until you press Stop; damage taken is a practice metric and never ends a run.
+
+## Build and save drills
+
+- Position your player start and up to eight permanent bosses in the world preview, by dragging, clicking or numeric coordinates.
+- Add recurring add waves, red ground circles/lines, real moving hostile aimed/fan/radial projectiles, and equally spaced projectile walls. Wall direction supports fixed angles, seeded random angles, or a per-cast sequence such as 0°, 30°, 60°. Spacing, speed, size, count and frequency are editable.
+- Add cyan deadline zones (be fully inside when the countdown expires) and green hold zones (stay inside during their active duration). The Fight sidebar and summary show deadlines reached / resolved opportunities and time inside / total active hold time. Overlapping holds count once. Missed deadlines and outside hold time add configured damage; they do not pass/fail the drill.
+- Every recurring rule has first timing and frequency; placement supports fixed, captured-player and seeded-random positions where meaningful. Wall spawn planes always start outside the arena.
+- Save a named drill, Save as or duplicate it, then select it in Fight’s dropdown. Export one drill or the library as JSON; import validated JSON files or pasted text. Invalid imports change nothing, and replacing matching IDs requires confirmation.
+- The `veilweaver.drills.v1` key is independent of loadout and keybinding preferences. Everything stays in this browser on this device; export for backup or transfer. Blocked/full storage keeps your work in memory with a warning.
+- Entering Edit pauses the current run, including an in-progress cast. Return to Fight and explicitly Resume to continue its immutable original rules. To apply saved edits or a new selection, Stop, review the preserved result, and choose New session. Unsaved editor drafts have a discard confirmation.
+
+See [training drill format, timing, metrics and limits](docs/TRAINING_DRILLS.md). No account storage, duration limit, success/failure, ranking or tutorial is added.
 
 ## Ability tooltips and details
 
@@ -97,7 +109,7 @@ The simulation uses a 60 Hz integer clock and seeded randomness. Hidden tabs, un
 - Overkill is excluded. Display rounding does not change stored totals or time.
 - **DoT coverage** replaces the former single-Sorrowbrand coverage label. It pools covered ticks / available ticks for every selected maintenance DoT and every living target. Glimmer and the Lingering Touch talent are maintenance DoTs; short spender/AoE DoTs are not maintenance objectives.
 - Every target contributes from its first live tick, including initial application delays and newly spawned echoes. There is no grace period, excluded add time, or post-hoc denominator reduction. Each DoT receives the same live-target denominator; missing one lowers pooled coverage. With no maintenance DoT selected, the metric is N/A.
-- A stopped summary preserves exact totals, seed, loadout/talents and coverage until a new session. Reloading the page clears results and session setup while retaining loadout choices and spell keys.
+- A stopped summary preserves exact totals, seed, loadout/talents and coverage until a new session. Reloading clears run results while retaining the saved drill library, loadout choices and spell keys.
 
 ## Verify
 
@@ -113,7 +125,7 @@ Tests exercise all 32 base/talent forms, interaction boundaries, schema failures
 
 Compiled component tests use Happy DOM with native Canvas; they do not establish real-browser layout, live combat feel or touch-device behavior. Before merging or publishing, smoke-test the branch in a target browser: loadout/orb selection, effective base/talent tooltips on hover and keyboard focus, tooltip Escape/scroll/resize dismissal and viewport clamping, touch Help ability details, reorder, key capture/Save/Cancel/Escape/Tab/reset, browser reload persistence, long key labels, start/cast/move/dodge, pause/resume, Help, Stop/restart, tab switching, desktop viewport heights and mobile layout. WebMCP registration is tested with a mock, not a live browser implementation.
 
-The viewport-height fix is preserved: desktop HUD fits shorter viewports using a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. This Veil-defaults and saved-loadout branch is based directly on `feature/ability-tooltips` at `8b138013f01eecddc3d17669c131b1faaa9c91ba`, preserving its spell catalogue, custom slot keys and effective-ability tooltips. This work does not merge or deploy any branch.
+The viewport-height fix is preserved: desktop HUD uses a bounded letterboxed arena and scrolling sidebar, with stacked layout at mobile widths. The drill-editor branch starts from main `5a86e14987a406adc742baeb18402068aed804d3`, preserving the spell catalogue, custom slot keys, effective-ability tooltips, saved loadouts and production server/deployment configuration. This work does not merge or deploy any branch.
 
 ## Build and preview
 
@@ -137,11 +149,17 @@ src/components/SummaryDialog.svelte  Frozen results
 src/lib/catalogue.js            Canonical data, validation, patches and compiler
 src/lib/ability-details.js      Compiled-ability tooltip/detail projection
 src/lib/effect-handlers.js      Reusable effect handlers
-src/lib/engine.js               Deterministic combat and encounter scaffold
+src/lib/engine.js               Deterministic spell combat and session lifecycle
+src/lib/drills.js               Versioned schema, validation and tick compilation
+src/lib/drill-runtime.js        Bounded deterministic mechanics and collision
+src/lib/drill-storage.js        Independent local library and atomic JSON imports
+src/components/DrillEditor.svelte  World placement and mechanic editing
 src/lib/hud.js                  Pure simulation-to-UI projection
 src/lib/icons.js                Sigils and readiness clocks
 src/lib/renderer.js             Canvas arena and coordinate mapping
 src/lib/browser-tools.js        Optional browser-tool registration
 ```
 
-Optional WebMCP tools read/start/pause/resume/stop sessions, configure validated setup, select a target and attempt one equipped spell through the same actions as the UI. Unsupported browsers skip registration. No tool fast-forwards time, fabricates damage or automates movement. Registrations, animation callbacks, timers and movement state are cleaned up on unmount.
+Optional WebMCP tools read/start/pause/resume/stop sessions, configure validated loadouts / saved drill selection, switch Fight/Edit mode, select a target and attempt one equipped spell through the same actions as the UI. Unsupported browsers skip registration. No tool fast-forwards time, fabricates damage or automates movement. Registrations, animation callbacks, timers and movement state are cleaned up on unmount.
+
+Legacy `RaidSim` callers without a `drill` retain the old mechanics/layout constructor for compatibility with existing spell fixtures. The app always supplies a validated drill and never runs those legacy schedules. Browser tools reject old seed/layout/mechanics setup fields with a migration message; edit the selected drill instead.

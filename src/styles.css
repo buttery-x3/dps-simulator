@@ -131,3 +131,20 @@
 .ability-detail-choices button{font-size:11px;padding:5px 8px;min-height:32px}
 .ability-detail-choices button[aria-pressed="true"]{border-color:var(--violet);background:#30273f}
 .spell-detail>h3{font-size:14px;margin:0}
+
+/* Drill selection and mode are outside the combat keyboard surface. */
+.mode-control{display:flex;align-items:center;gap:3px;border:1px solid #3c4554;border-radius:8px;padding:4px;white-space:nowrap}
+.mode-control>span{font-size:12px;color:var(--muted);padding:0 7px}
+.mode-control button{border:0;padding:7px 12px;background:transparent;color:var(--muted);border-radius:5px}
+.mode-control button[aria-pressed="true"]{background:#384351;color:#f1dfb8}
+.drill-selection{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 0 12px;padding:10px 14px;background:#141e2b;border:1px solid #34404d;border-radius:8px;font-size:12px;color:#aab8c9}
+.drill-selection label{display:flex;align-items:center;gap:10px;color:#dcd2bd;font-weight:600}
+.drill-selection select{max-width:300px;min-width:170px;padding:7px;background:#0e1621;color:#e7e2d8;border:1px solid #4a5668;border-radius:5px}
+.next-drill-note{color:#e6c890}.editor-run-note{padding:12px;border:1px solid #766342;background:#30281b;color:#eed3a1;border-radius:8px;font-size:13px}
+.safe-counters{display:grid;gap:15px;padding:17px;border:1px solid #315453;background:#14292c;border-radius:8px;margin-top:12px}
+.safe-counters>div{display:grid;gap:5px}.safe-counters span{color:#a1cfcb;font-size:12px}.safe-counters strong{color:#c5f4e7;font-size:20px}.safe-counters small{color:#92aaa9;font-size:10px;line-height:1.4}
+@media(max-width:900px){.masthead{flex-wrap:wrap;gap:12px}.mode-control{margin-left:auto}.session-controls{flex-basis:100%;justify-content:flex-end}.drill-selection{gap:9px}.drill-selection select{max-width:220px}}
+
+/* Dense drills cannot stretch the combat canvas to the height of dozens of targets. */
+.targets-panel #targetList{max-height:clamp(160px,38vh,360px);overflow-y:auto;padding-right:4px;scrollbar-width:thin}
+.target-name{overflow-wrap:anywhere;min-width:0}

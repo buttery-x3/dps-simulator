@@ -177,7 +177,7 @@ describe('saved loadout reloads', () => {
   test.each(['running', 'paused', 'stopped'])('reload from %s restores no combat, results or session setup', async phase => {
     const loadout = {abilities: ['lingering-glimmer', 'astral-flare', 'veil-bolt'], talents: {'astral-flare': 'v3'}};
     launch();
-    flushSync(() => app.configure({seed: 24680, mechanics: false, layout: 'clustered', loadout}));
+    flushSync(() => app.configure({loadout}));
     click('startBtn');
     flushSync(() => app.castSpell('lingering-glimmer')); app.sim.advance(3);
     flushSync(() => app.castSpell('astral-flare')); app.sim.advance(2);
@@ -202,9 +202,10 @@ describe('saved loadout reloads', () => {
     expect(app.sim.seed).toBe(72821);
     expect(app.sim.layout).toBe('spread');
     expect(app.sim.mechanics).toBe(true);
-    expect($('seedInput').value).toBe('72821');
-    expect($('layoutInput').value).toBe('spread');
-    expect($('mechanicsInput').checked).toBe(true);
+    expect($('seedInput')).toBeNull();
+    expect($('layoutInput')).toBeNull();
+    expect($('mechanicsInput')).toBeNull();
+    expect($('drillSelect').value).toBe('training-default');
     expect(app.sim.time).toBe(0);
     expect(app.sim.totalDamage).toBe(0);
     expect(app.sim.damageTaken).toBe(0);
@@ -320,13 +321,13 @@ describe('loadout autosave entry points and unrelated interactions', () => {
   test('configure and WebMCP persist canonical selections through the same path without saving other setup', async () => {
     launch();
     const write = vi.spyOn(localStorage, 'setItem');
-    flushSync(() => app.configure({seed: 345, layout: 'clustered', mechanics: false}));
+    expect(() => app.configure({seed: 345, layout: 'clustered', mechanics: false})).toThrow(/drill editor/);
     expect(write).not.toHaveBeenCalled();
     flushSync(() => app.configure({loadout: {abilities: ['veil-bolt'], talents: {'veil-bolt': 'base'}}}));
     expect(saved()).toEqual({version: 1, loadout: {abilities: ['veil-bolt'], talents: {}}});
     const loadout = {abilities: ['gloam-thread', 'chain-strike'], talents: {'gloam-thread': 'v1'}};
-    const result = await tools.get('configure_training_session').execute({loadout, seed: 987}); flushSync();
-    expect(result).toMatchObject({loadout, seed: 987, layout: 'clustered', mechanics: false});
+    const result = await tools.get('configure_training_session').execute({loadout}); flushSync();
+    expect(result).toMatchObject({loadout, drillId: 'training-default', drill: {seed: 72821}});
     expect(saved()).toEqual({version: 1, loadout});
     expect(writesFor(write, LOADOUT_STORAGE_KEY)).toHaveLength(2);
     expect(writesFor(write, BINDINGS_STORAGE_KEY)).toHaveLength(0);
@@ -340,7 +341,7 @@ describe('loadout autosave entry points and unrelated interactions', () => {
   test('invalid configuration is rejected atomically without any save or changing the previous selection', async () => {
     launch();
     const loadout = {abilities: ['chain-strike', 'veil-bolt'], talents: {'veil-bolt': 'v2'}};
-    flushSync(() => app.configure({seed: 123, loadout}));
+    flushSync(() => app.configure({loadout}));
     const loadoutRaw = localStorage.getItem(LOADOUT_STORAGE_KEY);
     const write = vi.spyOn(localStorage, 'setItem');
     for (const next of [
@@ -355,7 +356,7 @@ describe('loadout autosave entry points and unrelated interactions', () => {
     ]) {
       expect(() => app.configure(next)).toThrow(); flushSync();
       expectSelection(loadout);
-      expect(app.sim.seed).toBe(123);
+      expect(app.sim.seed).toBe(72821);
       expect(localStorage.getItem(LOADOUT_STORAGE_KEY)).toBe(loadoutRaw);
     }
     await expect(tools.get('configure_training_session').execute({loadout, unexpected: true})).rejects.toThrow(/Invalid/);
